@@ -80,7 +80,7 @@ If you want to run the script directly without installing it via `pipx` (e.g., f
     (Or, from the project root: `pip install .`)
 2.  Run the main script:
     ```bash
-    python ec2_connect/main.py
+    python src/ec2_ssh/main.py
     ```
 
 ## Troubleshooting
