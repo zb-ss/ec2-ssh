@@ -1,0 +1,16 @@
+# pyproject.toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ec2-connect"
+version = "0.1.0"
+dependencies = [
+    "boto3",
+    "tabulate"
+]
+requires-python = ">=3.8"
+
+[project.scripts]
+ec2-ssh = "ec2_connect.main:main"
