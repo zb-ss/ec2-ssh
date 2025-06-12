@@ -6,6 +6,10 @@ import subprocess
 import os
 import json
 from pathlib import Path
+from datetime import datetime, timedelta
+
+CACHE_FILE_PATH = Path.home() / '.ec2_ssh_cache.json'
+CACHE_TTL_SECONDS = 300  # 5 minutes
 
 class KeyManager:
     def __init__(self):
@@ -96,9 +100,65 @@ class KeyManager:
              print(f"Unexpected error: {e}")
              return False
 
+def _format_timedelta(td):
+    """Formats a timedelta object into a human-readable string."""
+    parts = []
+    if td.days > 0:
+        parts.append(f"{td.days}d")
+    
+    seconds = td.seconds
+    hours = seconds // 3600
+    if hours > 0:
+        parts.append(f"{hours}h")
+    
+    minutes = (seconds % 3600) // 60
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    
+    if not parts or (hours == 0 and minutes == 0): # Show seconds if total is less than a minute or only seconds exist
+        parts.append(f"{seconds % 60}s")
+        
+    return " ".join(parts) if parts else "0s"
 
-def get_ec2_instances():
-    """Retrieve all EC2 instances across all regions."""
+def _load_instances_from_cache():
+    """Load instances from cache if valid."""
+    if CACHE_FILE_PATH.exists():
+        try:
+            with open(CACHE_FILE_PATH, 'r') as f:
+                cache_data = json.load(f)
+            
+            timestamp_str = cache_data.get('timestamp')
+            instances = cache_data.get('instances')
+
+            if timestamp_str and instances is not None:
+                cache_timestamp = datetime.fromisoformat(timestamp_str)
+                if datetime.now() - cache_timestamp < timedelta(seconds=CACHE_TTL_SECONDS):
+                    age = datetime.now() - cache_timestamp
+                    print(f"Loaded instances from cache (age: {_format_timedelta(age)}, TTL: {_format_timedelta(timedelta(seconds=CACHE_TTL_SECONDS))}).")
+                    return instances
+                else:
+                    print("Cache expired.")
+            else:
+                print("Invalid cache file format.")
+        except (json.JSONDecodeError, IOError, KeyError) as e:
+            print(f"Error reading cache file: {e}. Will fetch from AWS.")
+    return None
+
+def _save_instances_to_cache(instances):
+    """Save instances to cache."""
+    cache_data = {
+        'timestamp': datetime.now().isoformat(),
+        'instances': instances
+    }
+    try:
+        with open(CACHE_FILE_PATH, 'w') as f:
+            json.dump(cache_data, f, indent=2)
+        print("Instance list cached.")
+    except IOError as e:
+        print(f"Error writing to cache file: {e}")
+
+def fetch_instances_from_aws():
+    """Retrieve all EC2 instances across all regions from AWS."""
     ec2_client = boto3.client('ec2')
 
     # Get list of all regions
@@ -127,6 +187,18 @@ def get_ec2_instances():
                 'key_name': instance.key_name
             })
 
+    return instances
+
+def get_instances_with_cache_logic(force_refresh=False):
+    """Retrieve instances, using cache if available and valid, unless force_refresh is True."""
+    if not force_refresh:
+        cached_instances = _load_instances_from_cache()
+        if cached_instances is not None:
+            return cached_instances
+
+    print("Fetching EC2 instances from AWS...")
+    instances = fetch_instances_from_aws()
+    _save_instances_to_cache(instances)
     return instances
 
 def display_instances(instances):
@@ -301,8 +373,7 @@ def main():
         current_display_instances = []
         is_filtered = False
 
-        print("Fetching EC2 instances...")
-        all_instances = get_ec2_instances()
+        all_instances = get_instances_with_cache_logic()
         current_display_instances = all_instances
 
         while True:
@@ -312,10 +383,9 @@ def main():
                 print("No instances found on your AWS account.")
                 action = input("R)efresh, Q)uit? ").lower()
                 if action == 'r':
-                    print("Re-fetching EC2 instances...")
-                    all_instances = get_ec2_instances()
+                    all_instances = get_instances_with_cache_logic(force_refresh=True)
                     current_display_instances = all_instances
-                    is_filtered = False 
+                    is_filtered = False
                     continue
                 else:
                     break
@@ -375,8 +445,9 @@ def main():
                 if is_filtered:
                     print("Resetting filter and refreshing instances...")
                 else:
-                    print("Refreshing instances...")
-                all_instances = get_ec2_instances()
+                    # This case implies force_refresh=True because it's a manual refresh action
+                    pass # Message is handled by get_instances_with_cache_logic
+                all_instances = get_instances_with_cache_logic(force_refresh=True)
                 current_display_instances = all_instances
                 is_filtered = False
             

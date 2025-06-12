@@ -69,6 +69,16 @@ You can filter the list of instances by:
 
 Leave a field blank if you don't want to filter by it.
 
+### Instance List Caching
+
+To improve performance, especially when you have many EC2 instances across multiple regions, the tool implements a caching mechanism for the instance list:
+
+*   **How it works**: When instances are fetched from AWS, the list is saved to a local cache file (`~/.ec2_ssh_cache.json`) along with a timestamp.
+*   **Cache Duration (TTL)**: By default, the cache is considered valid for 5 minutes. If you run the tool and the cache is still within this Time-To-Live (TTL), the instance list will be loaded from the cache, which is significantly faster.
+*   **Automatic Refresh**: If the cache is older than the TTL, or if no cache file exists, the tool will automatically fetch fresh data from AWS and update the cache.
+*   **Manual Refresh**: The "Refresh instances" option (or "Reset filter & Refresh instances") in the main menu will always bypass the cache, fetch the latest data directly from AWS, and then update the cache file.
+*   **Data Freshness**: Be aware that if you are loading from the cache, any changes made to your EC2 instances in AWS (e.g., new instances, terminated instances, IP changes) since the cache was last updated will not be reflected until the cache expires or you perform a manual refresh.
+
 ## Development
 
 If you want to run the script directly without installing it via `pipx` (e.g., for development):
