@@ -98,4 +98,8 @@ If you want to run the script directly without installing it via `pipx` (e.g., f
 *   **AWS Credentials**: Ensure your AWS credentials are correctly configured and have permissions for `ec2:DescribeInstances` and `ec2:DescribeRegions`.
 *   **SSH Agent Not Running**: If you see messages like "Could not open a connection to your authentication agent", you may need to start your SSH agent. On Linux/macOS, this is often done with `eval $(ssh-agent -s)`.
 *   **Key Permissions**: SSH keys typically require strict permissions (e.g., `600` or `400`). The tool will warn you and offer to fix permissions if they are incorrect when adding a key.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 ```

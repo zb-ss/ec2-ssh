@@ -39,4 +39,7 @@ Please refer to the `README.md` for instructions on setting up your development 
 ## Code of Conduct
 Please note that this project is released with a Contributor Code of Conduct. By participating in this project you agree to abide by its terms. For now, please be respectful and constructive in all interactions.
 
+## License
+By contributing to EC2-SSH, you agree that your contributions will be licensed under its MIT License.
+
 Thank you for your contribution!
