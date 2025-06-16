@@ -252,14 +252,24 @@ def ssh_to_instance(instance, username='ec2-user', key_manager=None):
 
     try:
         ssh_command = ['ssh']
+        key_added_to_agent_successfully = False
 
-        # Check if SSH agent is running
         if KeyManager.check_ssh_agent():
             if key_path and KeyManager.add_key_to_agent(key_path):
                 print("Using SSH agent for authentication")
-        elif key_path:
-            # If no SSH agent, fall back to direct key specification
-            ssh_command.extend(['-i', key_path])
+                key_added_to_agent_successfully = True
+            # If key_path is set but adding to agent failed,
+            # we'll fall through to use -i if key_path is still valid.
+        
+        # Use -i if:
+        # 1. Agent is not running AND key_path is set.
+        # 2. Agent IS running BUT adding key failed AND key_path is set.
+        if not key_added_to_agent_successfully and key_path:
+            # Ensure the key file exists before adding -i, to avoid ssh erroring on a non-existent file
+            # if add_key_to_agent already determined it doesn't exist.
+            # However, add_key_to_agent handles this and returns False, so we trust key_path if it's non-empty.
+            # The user would have been prompted if the key file was bad.
+            ssh_command.extend(['-o', 'IdentitiesOnly=yes', '-i', os.path.expanduser(key_path)])
 
         ssh_command.append(f'{username}@{instance["public_ip"]}')
 
