@@ -59,7 +59,10 @@ Upon starting, the tool will fetch and display your EC2 instances. You will then
 *   The tool stores SSH key configurations in `~/.ec2_ssh_config.json`.
 *   When connecting, if an SSH key is configured for an instance (or a default key is set), the tool will attempt to use it.
 *   If an SSH agent is running and a key is specified, the tool will try to add the key to the agent for the current session.
-*   If no key is configured for an instance, you will be prompted to enter the path to an SSH key file. You can then choose to save this key for the specific instance or as the default key.
+*   **Automatic Key Discovery**: If no key is configured for an instance, the tool will automatically search for matching SSH keys in your `~/.ssh` directory based on the AWS key name. It looks for various patterns including exact matches, `.pem` extensions, and fuzzy matching.
+*   **Tab Autocomplete**: When prompted for SSH key paths, you can press `Tab` to autocomplete from available keys in your `~/.ssh` directory (requires the `readline` module, which is available on most Unix-like systems).
+*   **Smart Key Suggestions**: The tool displays available SSH keys from your `~/.ssh` directory to help you choose the correct one.
+*   If no automatic match is found, you will be prompted to enter the path to an SSH key file. You can then choose to save this key for the specific instance or as the default key.
 
 ### Searching Instances
 
@@ -98,6 +101,8 @@ If you want to run the script directly without installing it via `pipx` (e.g., f
 *   **AWS Credentials**: Ensure your AWS credentials are correctly configured and have permissions for `ec2:DescribeInstances` and `ec2:DescribeRegions`.
 *   **SSH Agent Not Running**: If you see messages like "Could not open a connection to your authentication agent", you may need to start your SSH agent. On Linux/macOS, this is often done with `eval $(ssh-agent -s)`.
 *   **Key Permissions**: SSH keys typically require strict permissions (e.g., `600` or `400`). The tool will warn you and offer to fix permissions if they are incorrect when adding a key.
+*   **Autocomplete Not Working**: Tab autocomplete requires the `readline` module, which is available on most Unix-like systems but may not be available on Windows. If autocomplete doesn't work, you can still type the full path manually.
+*   **Key Discovery**: Automatic key discovery looks for keys in your `~/.ssh` directory. If your keys are stored elsewhere, you'll need to provide the full path manually.
 
 ## License
 

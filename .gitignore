@@ -45,3 +45,6 @@ coverage.xml
 
 # Hatchling specific (build backend)
 .hatch/
+
+# Projectile marker file
+.projectile

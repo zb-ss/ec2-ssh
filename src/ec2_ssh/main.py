@@ -5,8 +5,14 @@ from tabulate import tabulate
 import subprocess
 import os
 import json
+import glob
 from pathlib import Path
 from datetime import datetime, timedelta
+try:
+    import readline
+    READLINE_AVAILABLE = True
+except ImportError:
+    READLINE_AVAILABLE = False
 
 CACHE_FILE_PATH = Path.home() / '.ec2_ssh_cache.json'
 CACHE_TTL_SECONDS = 300  # 5 minutes
@@ -14,6 +20,7 @@ CACHE_TTL_SECONDS = 300  # 5 minutes
 class KeyManager:
     def __init__(self):
         self.config_file = Path.home() / '.ec2_ssh_config.json'
+        self.ssh_dir = Path.home() / '.ssh'
         self.load_config()
 
     def load_config(self):
@@ -50,6 +57,88 @@ class KeyManager:
             return os.environ.get('SSH_AGENT_PID')
         except Exception:
             return None
+
+    def discover_ssh_key(self, key_name):
+        """Automatically discover SSH key in .ssh directory based on AWS key name."""
+        if not key_name:
+            return None
+            
+        # Ensure .ssh directory exists
+        if not self.ssh_dir.exists():
+            return None
+            
+        # Common key file patterns to search for
+        patterns = [
+            f"{key_name}",
+            f"{key_name}.pem",
+            f"id_rsa_{key_name}",
+            f"{key_name}_id_rsa",
+            f"aws_{key_name}",
+            f"{key_name}_aws",
+        ]
+        
+        # Search for matching keys
+        for pattern in patterns:
+            # Check for exact match
+            key_path = self.ssh_dir / pattern
+            if key_path.exists():
+                return str(key_path)
+                
+            # Check for .pem extension
+            key_path_pem = self.ssh_dir / f"{pattern}.pem"
+            if key_path_pem.exists():
+                return str(key_path_pem)
+        
+        # If no exact match, try fuzzy search
+        all_keys = self.list_available_keys()
+        for key_path in all_keys:
+            key_filename = Path(key_path).stem.lower()
+            if key_name.lower() in key_filename:
+                return key_path
+                
+        return None
+    
+    def list_available_keys(self):
+        """List all available SSH keys in .ssh directory."""
+        if not self.ssh_dir.exists():
+            return []
+            
+        key_files = []
+        # Look for common SSH key files
+        patterns = ['*.pem', 'id_*', '*_id_rsa', '*_rsa', 'aws_*']
+        
+        for pattern in patterns:
+            for key_file in self.ssh_dir.glob(pattern):
+                if key_file.is_file():
+                    key_files.append(str(key_file))
+                    
+        return sorted(key_files)
+    
+    def get_key_path_with_autocomplete(self, prompt="Enter path to SSH key file: "):
+        """Get key path with autocomplete support."""
+        if READLINE_AVAILABLE:
+            import readline
+            # Set up autocomplete for SSH keys
+            available_keys = self.list_available_keys()
+            
+            def completer(text, state):
+                options = [key for key in available_keys if key.startswith(text)]
+                if state < len(options):
+                    return options[state]
+                return None
+            
+            readline.set_completer_delims(' \t\n;')
+            readline.parse_and_bind("tab: complete")
+            readline.set_completer(completer)
+        
+        try:
+            key_path = input(prompt).strip()
+            return key_path
+        finally:
+            # Reset autocomplete to avoid interference
+            if READLINE_AVAILABLE:
+                import readline
+                readline.set_completer(None)
 
     @staticmethod
     def add_key_to_agent(key_path):
@@ -237,17 +326,41 @@ def ssh_to_instance(instance, username='ec2-user', key_manager=None):
     # Get key path for this instance
     key_path = key_manager.get_key_path(instance['id']) if key_manager else None
 
-    # If no key is configured, prompt for one
+    # If no key is configured, try automatic discovery
+    if not key_path and key_manager and instance.get('key_name'):
+        print(f"Looking for SSH key '{instance['key_name']}' in ~/.ssh directory...")
+        discovered_key = key_manager.discover_ssh_key(instance['key_name'])
+        if discovered_key:
+            print(f"✓ Found matching key: {discovered_key}")
+            key_path = discovered_key
+            # Auto-save the discovered key
+            key_manager.set_key_path(instance['id'], key_path)
+            print("✓ Key automatically saved for this instance")
+        else:
+            print(f"✗ No automatic match found for key '{instance['key_name']}'")
+
+    # If still no key, prompt with autocomplete
     if not key_path:
         print(f"No SSH key configured for instance {instance['id']}")
-        key_path = input("Enter path to SSH key file: ").strip()
+        if key_manager:
+            available_keys = key_manager.list_available_keys()
+            if available_keys:
+                print(f"Available keys in ~/.ssh:")
+                for i, key in enumerate(available_keys[:5], 1):  # Show first 5 keys
+                    print(f"  {i}. {key}")
+                if len(available_keys) > 5:
+                    print(f"  ... and {len(available_keys) - 5} more")
+                print("  (Press Tab for autocomplete)")
+        
+        key_path = key_manager.get_key_path_with_autocomplete("Enter path to SSH key file: ") if key_manager else input("Enter path to SSH key file: ").strip()
+        
         if key_path:
             save = input("Save this key for this instance? (y/n): ").lower()
-            if save == 'y':
+            if save == 'y' and key_manager:
                 key_manager.set_key_path(instance['id'], key_path)
 
             default = input("Set as default key for all instances? (y/n): ").lower()
-            if default == 'y':
+            if default == 'y' and key_manager:
                 key_manager.set_default_key(key_path)
 
     try:
@@ -293,7 +406,16 @@ def manage_keys(key_manager, instances):
         choice = input("\nEnter choice (1-6): ")
 
         if choice == '1':
-            key_path = input("Enter path to default SSH key file: ").strip()
+            available_keys = key_manager.list_available_keys()
+            if available_keys:
+                print(f"Available keys in ~/.ssh:")
+                for i, key in enumerate(available_keys[:5], 1):  # Show first 5 keys
+                    print(f"  {i}. {key}")
+                if len(available_keys) > 5:
+                    print(f"  ... and {len(available_keys) - 5} more")
+                print("  (Press Tab for autocomplete)")
+            
+            key_path = key_manager.get_key_path_with_autocomplete("Enter path to default SSH key file: ")
             if key_path:
                 key_manager.set_default_key(key_path)
                 print("Default key updated")
@@ -314,7 +436,32 @@ def manage_keys(key_manager, instances):
             idx = int(idx_str)
             if 1 <= idx <= len(instances):
                 instance = instances[idx-1]
-                key_path = input("Enter path to SSH key file: ").strip()
+                
+                # Try automatic discovery first
+                discovered_key = None
+                if instance.get('key_name'):
+                    print(f"Looking for SSH key '{instance['key_name']}' in ~/.ssh directory...")
+                    discovered_key = key_manager.discover_ssh_key(instance['key_name'])
+                    if discovered_key:
+                        print(f"✓ Found matching key: {discovered_key}")
+                        use_discovered = input("Use this key? (y/n): ").lower()
+                        if use_discovered != 'y':
+                            discovered_key = None
+                
+                if discovered_key:
+                    key_path = discovered_key
+                else:
+                    available_keys = key_manager.list_available_keys()
+                    if available_keys:
+                        print(f"Available keys in ~/.ssh:")
+                        for i, key in enumerate(available_keys[:5], 1):  # Show first 5 keys
+                            print(f"  {i}. {key}")
+                        if len(available_keys) > 5:
+                            print(f"  ... and {len(available_keys) - 5} more")
+                        print("  (Press Tab for autocomplete)")
+                    
+                    key_path = key_manager.get_key_path_with_autocomplete("Enter path to SSH key file: ")
+                
                 if key_path:
                     key_manager.set_key_path(instance['id'], key_path)
                     print("Instance key updated")
@@ -337,7 +484,16 @@ def manage_keys(key_manager, instances):
                 print("SSH agent is not running. Please start it first with 'eval $(ssh-agent)'")
                 continue
 
-            key_path = input("Enter path to SSH key file: ").strip()
+            available_keys = key_manager.list_available_keys()
+            if available_keys:
+                print(f"Available keys in ~/.ssh:")
+                for i, key in enumerate(available_keys[:5], 1):  # Show first 5 keys
+                    print(f"  {i}. {key}")
+                if len(available_keys) > 5:
+                    print(f"  ... and {len(available_keys) - 5} more")
+                print("  (Press Tab for autocomplete)")
+            
+            key_path = key_manager.get_key_path_with_autocomplete("Enter path to SSH key file: ")
             if key_path:
                 KeyManager.add_key_to_agent(key_path)
 
