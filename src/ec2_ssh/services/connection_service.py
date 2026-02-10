@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 import logging
-from typing import Optional, Dict
+import os
+import shlex
+from typing import Optional, Dict, List
 
 from ec2_ssh.services.interfaces import ConnectionServiceInterface
 from ec2_ssh.config.manager import ConfigManager
@@ -92,6 +94,55 @@ class ConnectionService(ConnectionServiceInterface):
         proxy_jump = ''.join(parts)
         logger.debug("Built ProxyJump string: %s", proxy_jump)
         return proxy_jump
+
+    def get_proxy_args(self, profile: ConnectionProfile) -> List[str]:
+        """Build SSH proxy arguments for bastion connection.
+
+        Uses ProxyCommand when bastion_key is specified (ProxyJump doesn't
+        support separate keys for the jump host). Falls back to ProxyJump
+        when no bastion key is needed. Uses raw proxy_command if set.
+
+        Args:
+            profile: Connection profile with bastion config.
+
+        Returns:
+            List of SSH arguments for proxy, or empty list if no bastion.
+        """
+        if not profile:
+            return []
+
+        # Use explicit proxy_command if set
+        if profile.proxy_command:
+            logger.debug("Using explicit ProxyCommand: %s", profile.proxy_command)
+            return ['-o', f'ProxyCommand={profile.proxy_command}']
+
+        if not profile.bastion_host:
+            return []
+
+        # When bastion_key is specified, use ProxyCommand so we can pass -i
+        if profile.bastion_key:
+            bastion_user = profile.bastion_user or 'ec2-user'
+            key_expanded = os.path.expanduser(profile.bastion_key)
+            parts = [
+                'ssh',
+                '-i', shlex.quote(key_expanded),
+                '-o', 'StrictHostKeyChecking=no',
+                '-o', 'IdentitiesOnly=yes',
+            ]
+            if profile.ssh_port != 22:
+                parts.extend(['-p', str(profile.ssh_port)])
+            parts.extend(['-W', '%h:%p', f'{bastion_user}@{profile.bastion_host}'])
+            proxy_cmd = ' '.join(parts)
+            logger.debug("Using ProxyCommand with bastion key: %s", proxy_cmd)
+            return ['-o', f'ProxyCommand={proxy_cmd}']
+
+        # No bastion key — use simpler ProxyJump
+        jump = self.get_proxy_jump_string(profile)
+        if jump:
+            logger.debug("Using ProxyJump: %s", jump)
+            return ['-J', jump]
+
+        return []
 
     def get_target_host(
         self,

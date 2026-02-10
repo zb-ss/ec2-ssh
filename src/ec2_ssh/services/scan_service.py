@@ -67,9 +67,9 @@ class ScanService(ScanServiceInterface):
         # Resolve connection details
         profile = connection_service.resolve_profile(instance)
         host = connection_service.get_target_host(instance, profile)
-        proxy_jump = None
+        proxy_args = []
         if profile:
-            proxy_jump = connection_service.get_proxy_jump_string(profile)
+            proxy_args = connection_service.get_proxy_args(profile)
 
         username = self._config_manager.get().default_username
         key_path = ssh_service.get_key_path(instance.get('id', ''))
@@ -87,7 +87,7 @@ class ScanService(ScanServiceInterface):
         # Scan paths (run ls -la on each path)
         for path in scan_paths:
             result = await self._run_path_scan(
-                path, host, username, key_path, proxy_jump, ssh_service
+                path, host, username, key_path, proxy_args, ssh_service
             )
             if result:
                 results.append(result)
@@ -95,7 +95,7 @@ class ScanService(ScanServiceInterface):
         # Run scan commands
         for command in scan_commands:
             result = await self._run_command_scan(
-                command, host, username, key_path, proxy_jump, ssh_service
+                command, host, username, key_path, proxy_args, ssh_service
             )
             if result:
                 results.append(result)
@@ -134,7 +134,7 @@ class ScanService(ScanServiceInterface):
         host: str,
         username: str,
         key_path: Optional[str],
-        proxy_jump: Optional[str],
+        proxy_args: List[str],
         ssh_service: SSHServiceInterface
     ) -> Optional[dict]:
         """Scan a remote path by running ls -la via SSH.
@@ -144,15 +144,22 @@ class ScanService(ScanServiceInterface):
             host: Target host
             username: SSH username
             key_path: SSH key path (optional)
-            proxy_jump: ProxyJump string (optional)
+            proxy_args: SSH proxy arguments from ConnectionService.get_proxy_args()
             ssh_service: SSH service for building commands
 
         Returns:
             Scan result dictionary or None on failure
         """
-        remote_command = f'ls -la {shlex.quote(path)} 2>/dev/null'
+        # Expand ~ to $HOME for remote shell (shlex.quote prevents tilde expansion)
+        if path.startswith('~/'):
+            safe_path = '$HOME/' + path[2:]
+        elif path == '~':
+            safe_path = '$HOME'
+        else:
+            safe_path = path
+        remote_command = f'ls -la "{safe_path}" 2>/dev/null'
         ssh_cmd = ssh_service.build_ssh_command(
-            host, username, key_path, proxy_jump, remote_command
+            host, username, key_path, remote_command=remote_command, proxy_args=proxy_args
         )
 
         try:
@@ -163,7 +170,8 @@ class ScanService(ScanServiceInterface):
                     ssh_cmd,
                     capture_output=True,
                     text=True,
-                    timeout=30
+                    timeout=30,
+                    stdin=subprocess.DEVNULL
                 )
             )
 
@@ -184,7 +192,7 @@ class ScanService(ScanServiceInterface):
         host: str,
         username: str,
         key_path: Optional[str],
-        proxy_jump: Optional[str],
+        proxy_args: List[str],
         ssh_service: SSHServiceInterface
     ) -> Optional[dict]:
         """Run a scan command via SSH and capture output.
@@ -194,14 +202,14 @@ class ScanService(ScanServiceInterface):
             host: Target host
             username: SSH username
             key_path: SSH key path (optional)
-            proxy_jump: ProxyJump string (optional)
+            proxy_args: SSH proxy arguments from ConnectionService.get_proxy_args()
             ssh_service: SSH service for building commands
 
         Returns:
             Scan result dictionary or None on failure
         """
         ssh_cmd = ssh_service.build_ssh_command(
-            host, username, key_path, proxy_jump, command
+            host, username, key_path, remote_command=command, proxy_args=proxy_args
         )
 
         try:

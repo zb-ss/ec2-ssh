@@ -23,6 +23,10 @@ class InstanceListScreen(Screen):
         Binding("r", "refresh", "Refresh", show=True),
         Binding("/", "focus_search", "Search", show=True),
         Binding("enter", "select_instance", "Select", show=True),
+        Binding("s", "ssh_connect", "SSH", show=True),
+        Binding("b", "browse_files", "Browse", show=True),
+        Binding("c", "run_command", "Command", show=True),
+        Binding("t", "scp_transfer", "Transfer", show=True),
     ]
 
     def __init__(self) -> None:
@@ -168,3 +172,76 @@ class InstanceListScreen(Screen):
             self.app.push_screen(ServerActionsScreen(instance))
         else:
             self.app.notify("No instance selected", severity="warning")
+
+    def _get_selected_running_instance(self) -> Optional[dict]:
+        """Get the selected instance, validate it's running.
+
+        Returns:
+            Instance dict if valid, None otherwise.
+        """
+        table = self.query_one(InstanceTable)
+        instance = table.get_selected_instance()
+
+        if not instance:
+            self.app.notify("No instance selected", severity="warning")
+            return None
+
+        if instance.get('state') != 'running':
+            self.app.notify(
+                f"Instance is {instance.get('state')}. Only running instances can connect.",
+                severity="warning"
+            )
+            return None
+
+        return instance
+
+    def action_ssh_connect(self) -> None:
+        """Quick SSH connect to selected instance."""
+        instance = self._get_selected_running_instance()
+        if not instance:
+            return
+
+        try:
+            profile = self.app.connection_service.resolve_profile(instance)
+            host = self.app.connection_service.get_target_host(instance, profile)
+            proxy_args = []
+            if profile:
+                proxy_args = self.app.connection_service.get_proxy_args(profile)
+            username = self.app.config_manager.get().default_username
+            key_path = self.app.ssh_service.get_key_path(instance['id'])
+
+            if not key_path and instance.get('key_name'):
+                key_path = self.app.ssh_service.discover_key(instance['key_name'])
+
+            ssh_cmd = self.app.ssh_service.build_ssh_command(host, username, key_path, proxy_args=proxy_args)
+
+            if self.app.terminal_service.launch_ssh_in_terminal(ssh_cmd):
+                self.app.notify(f"SSH session launched for {instance.get('name', 'instance')}")
+            else:
+                self.app.notify("No terminal emulator detected. Set 'terminal_emulator' in settings.", severity="error")
+        except Exception as e:
+            self.app.notify(f"SSH error: {e}", severity="error")
+
+    def action_browse_files(self) -> None:
+        """Open file browser for selected instance."""
+        instance = self._get_selected_running_instance()
+        if not instance:
+            return
+        from ec2_ssh.screens.file_browser import FileBrowserScreen
+        self.app.push_screen(FileBrowserScreen(instance))
+
+    def action_run_command(self) -> None:
+        """Open command overlay for selected instance."""
+        instance = self._get_selected_running_instance()
+        if not instance:
+            return
+        from ec2_ssh.screens.command_overlay import CommandOverlay
+        self.app.push_screen(CommandOverlay(instance))
+
+    def action_scp_transfer(self) -> None:
+        """Open SCP transfer for selected instance."""
+        instance = self._get_selected_running_instance()
+        if not instance:
+            return
+        from ec2_ssh.screens.scp_transfer import SCPTransferScreen
+        self.app.push_screen(SCPTransferScreen(instance))

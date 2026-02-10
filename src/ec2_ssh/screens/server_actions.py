@@ -45,6 +45,32 @@ class ServerActionsScreen(Screen):
         super().__init__()
         self._instance = instance
 
+    def on_mount(self) -> None:
+        """Focus the first action button on mount."""
+        self.query_one("#btn_browse", Button).focus()
+
+    def on_key(self, event) -> None:
+        """Handle arrow key navigation between buttons.
+
+        Args:
+            event: Key event.
+        """
+        if event.key in ("up", "down"):
+            buttons = list(self.query("Button"))
+            if not buttons:
+                return
+            # Find currently focused button
+            focused = self.focused
+            if focused not in buttons:
+                buttons[0].focus()
+                return
+            idx = buttons.index(focused)
+            if event.key == "down":
+                next_idx = (idx + 1) % len(buttons)
+            else:
+                next_idx = (idx - 1) % len(buttons)
+            buttons[next_idx].focus()
+
     def compose(self) -> ComposeResult:
         """Compose the server actions UI."""
         yield Header()
@@ -52,10 +78,15 @@ class ServerActionsScreen(Screen):
             Static(self._build_server_info(), id="server_info"),
             Vertical(
                 Button("1. Browse Files", id="btn_browse", variant="primary"),
+                Static("[dim]  Browse remote filesystem via SSH (tree view)[/dim]", classes="help_text"),
                 Button("2. Run Command", id="btn_command"),
+                Static("[dim]  Execute commands on this server in an overlay panel[/dim]", classes="help_text"),
                 Button("3. SSH Connect", id="btn_ssh"),
+                Static("[dim]  Open a new terminal window with SSH session[/dim]", classes="help_text"),
                 Button("4. SCP Transfer", id="btn_scp"),
+                Static("[dim]  Upload or download files via SCP[/dim]", classes="help_text"),
                 Button("5. View Scan Results", id="btn_scan"),
+                Static("[dim]  View keyword scan data collected from this server[/dim]", classes="help_text"),
                 Button("6. Back", id="btn_back", variant="error"),
                 id="action_buttons"
             ),
@@ -192,16 +223,16 @@ class ServerActionsScreen(Screen):
             # Build SSH command
             profile = self.app.connection_service.resolve_profile(self._instance)
             host = self.app.connection_service.get_target_host(self._instance, profile)
-            proxy_jump = None
+            proxy_args = []
             if profile:
-                proxy_jump = self.app.connection_service.get_proxy_jump_string(profile)
+                proxy_args = self.app.connection_service.get_proxy_args(profile)
             username = self.app.config_manager.get().default_username
             key_path = self.app.ssh_service.get_key_path(self._instance['id'])
 
             if not key_path and self._instance.get('key_name'):
                 key_path = self.app.ssh_service.discover_key(self._instance['key_name'])
 
-            ssh_cmd = self.app.ssh_service.build_ssh_command(host, username, key_path, proxy_jump)
+            ssh_cmd = self.app.ssh_service.build_ssh_command(host, username, key_path, proxy_args=proxy_args)
 
             # Launch in terminal
             if self.app.terminal_service.launch_ssh_in_terminal(ssh_cmd):

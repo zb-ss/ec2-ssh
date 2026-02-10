@@ -129,7 +129,8 @@ class SSHServiceInterface(ABC):
         username: str,
         key_path: Optional[str] = None,
         proxy_jump: Optional[str] = None,
-        remote_command: Optional[str] = None
+        remote_command: Optional[str] = None,
+        proxy_args: Optional[List[str]] = None
     ) -> List[str]:
         """Build SSH command with appropriate options.
 
@@ -137,8 +138,9 @@ class SSHServiceInterface(ABC):
             host: Target hostname or IP.
             username: SSH username.
             key_path: Path to SSH key (optional if using agent).
-            proxy_jump: ProxyJump string (user@host).
+            proxy_jump: ProxyJump string (user@host). Deprecated, use proxy_args.
             remote_command: Command to execute remotely.
+            proxy_args: List of SSH proxy arguments from ConnectionService.get_proxy_args().
 
         Returns:
             List of command arguments for subprocess.
@@ -241,6 +243,20 @@ class ConnectionServiceInterface(ABC):
 
         Returns:
             ProxyJump string (user@host), or None if no bastion.
+        """
+        pass
+
+    @abstractmethod
+    def get_proxy_args(self, profile: ConnectionProfile) -> List[str]:
+        """Build SSH proxy arguments for bastion connection.
+
+        Uses ProxyCommand when bastion_key is specified, ProxyJump otherwise.
+
+        Args:
+            profile: Connection profile with bastion config.
+
+        Returns:
+            List of SSH arguments for proxy, or empty list if no bastion.
         """
         pass
 

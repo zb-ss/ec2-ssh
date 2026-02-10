@@ -26,7 +26,8 @@ class SCPService(SCPServiceInterface):
         host: str,
         username: str,
         key_path: Optional[str] = None,
-        proxy_jump: Optional[str] = None
+        proxy_jump: Optional[str] = None,
+        proxy_args: Optional[List[str]] = None
     ) -> List[str]:
         """Build SCP upload command.
 
@@ -39,11 +40,12 @@ class SCPService(SCPServiceInterface):
             username: SSH username.
             key_path: Path to SSH key (optional if using agent).
             proxy_jump: ProxyJump string (user@host).
+            proxy_args: List of SSH proxy arguments (takes precedence over proxy_jump).
 
         Returns:
             List of command arguments for subprocess.
         """
-        cmd = self._build_base_args(key_path, proxy_jump)
+        cmd = self._build_base_args(key_path, proxy_jump, proxy_args)
         cmd.append(os.path.expanduser(local_path))
         cmd.append(f'{username}@{host}:{remote_path}')
         logger.debug("Built SCP upload command: %s", ' '.join(cmd))
@@ -56,7 +58,8 @@ class SCPService(SCPServiceInterface):
         host: str,
         username: str,
         key_path: Optional[str] = None,
-        proxy_jump: Optional[str] = None
+        proxy_jump: Optional[str] = None,
+        proxy_args: Optional[List[str]] = None
     ) -> List[str]:
         """Build SCP download command.
 
@@ -69,11 +72,12 @@ class SCPService(SCPServiceInterface):
             username: SSH username.
             key_path: Path to SSH key (optional if using agent).
             proxy_jump: ProxyJump string (user@host).
+            proxy_args: List of SSH proxy arguments (takes precedence over proxy_jump).
 
         Returns:
             List of command arguments for subprocess.
         """
-        cmd = self._build_base_args(key_path, proxy_jump)
+        cmd = self._build_base_args(key_path, proxy_jump, proxy_args)
         cmd.append(f'{username}@{host}:{remote_path}')
         cmd.append(os.path.expanduser(local_path))
         logger.debug("Built SCP download command: %s", ' '.join(cmd))
@@ -100,7 +104,8 @@ class SCPService(SCPServiceInterface):
                     command,
                     capture_output=True,
                     text=True,
-                    timeout=300
+                    timeout=300,
+                    stdin=subprocess.DEVNULL
                 )
             )
 
@@ -121,26 +126,35 @@ class SCPService(SCPServiceInterface):
     def _build_base_args(
         self,
         key_path: Optional[str],
-        proxy_jump: Optional[str]
+        proxy_jump: Optional[str],
+        proxy_args: Optional[List[str]] = None
     ) -> List[str]:
         """Build base SCP command arguments.
 
         Args:
             key_path: SSH key path.
             proxy_jump: ProxyJump string.
+            proxy_args: List of SSH proxy arguments (takes precedence over proxy_jump).
 
         Returns:
             List of base command arguments.
         """
-        cmd = ['scp']
+        cmd = [
+            'scp',
+            '-o', 'StrictHostKeyChecking=no',
+            '-o', 'UserKnownHostsFile=/dev/null',
+            '-o', 'IdentitiesOnly=yes',
+        ]
 
-        # Add ProxyJump if configured
-        if proxy_jump:
+        # Add proxy arguments (proxy_args takes precedence over proxy_jump)
+        if proxy_args:
+            cmd.extend(proxy_args)
+        elif proxy_jump:
             cmd.extend(['-J', proxy_jump])
 
-        # Add identity file with IdentitiesOnly to prevent auth failures
+        # Add identity file
         if key_path:
             expanded = os.path.expanduser(key_path)
-            cmd.extend(['-o', 'IdentitiesOnly=yes', '-i', expanded])
+            cmd.extend(['-i', expanded])
 
         return cmd

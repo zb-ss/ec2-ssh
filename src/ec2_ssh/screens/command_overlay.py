@@ -1,6 +1,7 @@
 """Command overlay modal for EC2 Connect v2.0."""
 
 from __future__ import annotations
+import shlex
 import subprocess
 import logging
 from typing import List
@@ -45,7 +46,7 @@ class CommandOverlay(ModalScreen):
         # Resolve connection details
         self._profile = None
         self._host = None
-        self._proxy_jump = None
+        self._proxy_args: List[str] = []
         self._username = None
         self._key_path = None
 
@@ -70,13 +71,16 @@ class CommandOverlay(ModalScreen):
             self._profile
         )
         if self._profile:
-            self._proxy_jump = self.app.connection_service.get_proxy_jump_string(
+            self._proxy_args = self.app.connection_service.get_proxy_args(
                 self._profile
             )
 
         config = self.app.config_manager.get()
         self._username = config.default_username
         self._key_path = self.app.ssh_service.get_key_path(self._instance['id'])
+
+        if not self._key_path and self._instance.get('key_name'):
+            self._key_path = self.app.ssh_service.discover_key(self._instance['key_name'])
 
         # Show welcome message
         output = self.query_one("#command_output", CommandOutput)
@@ -135,13 +139,16 @@ class CommandOverlay(ModalScreen):
         prompt = f"{self._username}@{self._instance.get('name', 'server')}:~"
         output_widget.append_command(f"{prompt}$ {command}")
 
+        # Wrap in login shell so PATH includes nvm/rbenv/etc.
+        login_command = f'bash -l -c {shlex.quote(command)}'
+
         # Build SSH command
         ssh_cmd = self.app.ssh_service.build_ssh_command(
             host=self._host,
             username=self._username,
             key_path=self._key_path,
-            proxy_jump=self._proxy_jump,
-            remote_command=command
+            remote_command=login_command,
+            proxy_args=self._proxy_args
         )
 
         logger.debug("Executing SSH command: %s", ' '.join(ssh_cmd))
@@ -169,7 +176,8 @@ class CommandOverlay(ModalScreen):
                 ssh_cmd,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                stdin=subprocess.DEVNULL
             )
 
             # Display output

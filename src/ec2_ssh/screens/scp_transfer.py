@@ -138,11 +138,11 @@ class SCPTransferScreen(Screen):
         if not key_path and self._instance.get('key_name'):
             key_path = self.app.ssh_service.discover_key(self._instance['key_name'])
 
-        # Get target host and proxy jump
+        # Get target host and proxy args
         host = self.app.connection_service.get_target_host(self._instance, profile)
-        proxy_jump = None
+        proxy_args = []
         if profile:
-            proxy_jump = self.app.connection_service.get_proxy_jump_string(profile, key_path)
+            proxy_args = self.app.connection_service.get_proxy_args(profile)
 
         # Get username from profile or use default
         username = self.app.config_manager.get().default_username
@@ -155,7 +155,7 @@ class SCPTransferScreen(Screen):
                 host=host,
                 username=username,
                 key_path=key_path,
-                proxy_jump=proxy_jump
+                proxy_args=proxy_args
             )
         else:  # download
             command = self.app.scp_service.build_download_command(
@@ -164,7 +164,7 @@ class SCPTransferScreen(Screen):
                 host=host,
                 username=username,
                 key_path=key_path,
-                proxy_jump=proxy_jump
+                proxy_args=proxy_args
             )
 
         # Execute transfer in worker

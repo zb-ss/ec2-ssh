@@ -114,7 +114,7 @@ class FileBrowserScreen(Screen):
 
         # Default to home directory if no paths configured
         if not normalized_paths:
-            normalized_paths = ['~/']
+            normalized_paths = ['~']
 
         return normalized_paths
 

@@ -14,6 +14,7 @@ class EC2ConnectApp(App):
     TITLE = "EC2 Connect"
     BINDINGS = [
         Binding("q", "quit", "Quit", show=True),
+        Binding("question_mark", "show_help", "Help", show=True),
     ]
 
     # Service instances - created in on_mount
@@ -59,4 +60,9 @@ class EC2ConnectApp(App):
         self.keyword_store = KeywordStore(config.keyword_store_path)
         self.terminal_service = TerminalService()
         self.scp_service = SCPService()
+
+    def action_show_help(self) -> None:
+        """Show help screen from any context."""
+        from ec2_ssh.screens.help import HelpScreen
+        self.push_screen(HelpScreen())
 

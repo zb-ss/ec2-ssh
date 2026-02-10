@@ -56,9 +56,9 @@ class RemoteTree(Tree):
         # Resolve connection details once
         self._profile = connection_service.resolve_profile(instance)
         self._host = connection_service.get_target_host(instance, self._profile)
-        self._proxy_jump = None
+        self._proxy_args: List[str] = []
         if self._profile:
-            self._proxy_jump = connection_service.get_proxy_jump_string(self._profile)
+            self._proxy_args = connection_service.get_proxy_args(self._profile)
         self._key_path = ssh_service.get_key_path(instance['id'])
 
     def on_mount(self) -> None:
@@ -176,14 +176,20 @@ class RemoteTree(Tree):
         Raises:
             RuntimeError: If SSH command fails or times out.
         """
-        # Build SSH command with ls -la
-        remote_command = f"ls -la {shlex.quote(path)}"
+        # Expand ~ to $HOME for remote shell (shlex.quote prevents tilde expansion)
+        if path.startswith('~/'):
+            safe_path = '$HOME/' + path[2:]
+        elif path == '~':
+            safe_path = '$HOME'
+        else:
+            safe_path = path
+        remote_command = f'ls -la "{safe_path}"'
         ssh_cmd = self._ssh_service.build_ssh_command(
             host=self._host,
             username=self._username,
             key_path=self._key_path,
-            proxy_jump=self._proxy_jump,
-            remote_command=remote_command
+            remote_command=remote_command,
+            proxy_args=self._proxy_args
         )
 
         logger.debug("Fetching directory contents: %s", path)
@@ -193,7 +199,8 @@ class RemoteTree(Tree):
                 ssh_cmd,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                stdin=subprocess.DEVNULL
             )
 
             if result.returncode != 0:

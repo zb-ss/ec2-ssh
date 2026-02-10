@@ -19,13 +19,41 @@ class MainMenuScreen(Screen):
         Binding("4", "option_4", "Scan Servers", show=True),
         Binding("5", "option_5", "Settings", show=True),
         Binding("6", "quit", "Quit", show=True),
+        Binding("question_mark", "show_help", "Help", show=True),
         Binding("l", "option_1", "List", show=False),
         Binding("s", "option_2", "Search", show=False),
         Binding("k", "option_3", "Keys", show=False),
         Binding("c", "option_4", "Scan", show=False),
         Binding("t", "option_5", "Settings", show=False),
         Binding("q", "quit", "Quit", show=False),
+        Binding("h", "show_help", "Help", show=False),
     ]
+
+    def on_mount(self) -> None:
+        """Focus the first menu button on mount."""
+        self.query_one("#btn_list", Button).focus()
+
+    def on_key(self, event) -> None:
+        """Handle arrow key navigation between buttons.
+
+        Args:
+            event: Key event.
+        """
+        if event.key in ("up", "down"):
+            buttons = list(self.query("Button"))
+            if not buttons:
+                return
+            # Find currently focused button
+            focused = self.focused
+            if focused not in buttons:
+                buttons[0].focus()
+                return
+            idx = buttons.index(focused)
+            if event.key == "down":
+                next_idx = (idx + 1) % len(buttons)
+            else:
+                next_idx = (idx - 1) % len(buttons)
+            buttons[next_idx].focus()
 
     def compose(self) -> ComposeResult:
         """Compose the main menu UI."""
@@ -33,15 +61,21 @@ class MainMenuScreen(Screen):
         yield Container(
             Static(
                 "[bold cyan]EC2 Connect v2.0[/bold cyan]\n\n"
-                "[dim]AWS EC2 Instance Manager with SSH[/dim]",
+                "[dim]AWS EC2 Instance Manager with SSH, SCP, and more.[/dim]\n"
+                "[dim]Use arrow keys or number keys to navigate. Press Enter to select.[/dim]",
                 id="banner"
             ),
             Vertical(
                 Button("1. List Instances", id="btn_list", variant="primary"),
+                Static("[dim]  View and connect to your EC2 instances across all regions[/dim]", classes="help_text"),
                 Button("2. Search", id="btn_search"),
+                Static("[dim]  Search instances and keyword scan results[/dim]", classes="help_text"),
                 Button("3. Manage SSH Keys", id="btn_keys"),
+                Static("[dim]  Configure SSH keys, auto-discovery, and agent settings[/dim]", classes="help_text"),
                 Button("4. Scan Servers", id="btn_scan"),
+                Static("[dim]  Scan running instances for configured paths and commands[/dim]", classes="help_text"),
                 Button("5. Settings", id="btn_settings"),
+                Static("[dim]  Configure scan paths, profiles, and application settings[/dim]", classes="help_text"),
                 Button("6. Quit", id="btn_quit", variant="error"),
                 id="menu_buttons"
             ),
@@ -121,3 +155,8 @@ class MainMenuScreen(Screen):
     def action_quit(self) -> None:
         """Quit the application."""
         self.app.exit()
+
+    def action_show_help(self) -> None:
+        """Show help screen."""
+        from ec2_ssh.screens.help import HelpScreen
+        self.app.push_screen(HelpScreen())
