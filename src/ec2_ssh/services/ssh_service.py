@@ -260,7 +260,6 @@ class SSHService(SSHServiceInterface):
             'ssh',
             '-o', 'StrictHostKeyChecking=no',
             '-o', 'UserKnownHostsFile=/dev/null',
-            '-o', 'IdentitiesOnly=yes',
         ]
 
         # Add proxy arguments (proxy_args takes precedence over proxy_jump)
@@ -269,10 +268,10 @@ class SSHService(SSHServiceInterface):
         elif proxy_jump:
             cmd.extend(['-J', proxy_jump])
 
-        # Add identity file
+        # Add identity file with IdentitiesOnly to prevent "Too many auth failures"
         if key_path:
             expanded = os.path.expanduser(key_path)
-            cmd.extend(['-i', expanded])
+            cmd.extend(['-o', 'IdentitiesOnly=yes', '-i', expanded])
 
         # Add target host
         cmd.append(f'{username}@{host}')

@@ -220,30 +220,50 @@ class ServerActionsScreen(Screen):
             return
 
         try:
-            # Build SSH command
+            # Resolve connection profile (bastion, proxy, etc.)
             profile = self.app.connection_service.resolve_profile(self._instance)
             host = self.app.connection_service.get_target_host(self._instance, profile)
+
+            if not host:
+                self.app.notify("No IP address available for this instance.", severity="error")
+                return
+
             proxy_args = []
             if profile:
                 proxy_args = self.app.connection_service.get_proxy_args(profile)
+
             username = self.app.config_manager.get().default_username
             key_path = self.app.ssh_service.get_key_path(self._instance['id'])
 
             if not key_path and self._instance.get('key_name'):
                 key_path = self.app.ssh_service.discover_key(self._instance['key_name'])
 
-            ssh_cmd = self.app.ssh_service.build_ssh_command(host, username, key_path, proxy_args=proxy_args)
+            ssh_cmd = self.app.ssh_service.build_ssh_command(
+                host=host,
+                username=username,
+                key_path=key_path,
+                proxy_args=proxy_args,
+            )
+
+            logger.info(
+                "SSH connect: host=%s, user=%s, key=%s, proxy=%s, profile=%s",
+                host, username, key_path,
+                'yes' if proxy_args else 'no',
+                profile.name if profile else 'direct',
+            )
 
             # Launch in terminal
             if self.app.terminal_service.launch_ssh_in_terminal(ssh_cmd):
-                self.app.notify(f"SSH session launched for {self._instance.get('name', 'instance')}")
+                name = self._instance.get('name') or self._instance.get('id', 'instance')
+                via = f" via {profile.bastion_host}" if profile and profile.bastion_host else ""
+                self.app.notify(f"SSH session launched for {name}{via}")
             else:
                 self.app.notify(
                     "Could not detect terminal emulator. Set 'terminal_emulator' in settings.",
                     severity="error"
                 )
         except Exception as e:
-            logger.error("Error launching SSH terminal: %s", e)
+            logger.error("Error launching SSH terminal: %s", e, exc_info=True)
             self.app.notify(f"Error launching SSH: {e}", severity="error")
 
     def action_action_4(self) -> None:

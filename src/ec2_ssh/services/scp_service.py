@@ -16,7 +16,7 @@ class SCPService(SCPServiceInterface):
     """SCP service implementing file transfer operations.
 
     Uses same ProxyJump pattern as SSH for bastion support.
-    Always uses IdentitiesOnly=yes to prevent authentication failures.
+    Uses IdentitiesOnly=yes when a key is specified to prevent auth failures.
     """
 
     def build_upload_command(
@@ -143,7 +143,6 @@ class SCPService(SCPServiceInterface):
             'scp',
             '-o', 'StrictHostKeyChecking=no',
             '-o', 'UserKnownHostsFile=/dev/null',
-            '-o', 'IdentitiesOnly=yes',
         ]
 
         # Add proxy arguments (proxy_args takes precedence over proxy_jump)
@@ -152,9 +151,9 @@ class SCPService(SCPServiceInterface):
         elif proxy_jump:
             cmd.extend(['-J', proxy_jump])
 
-        # Add identity file
+        # Add identity file with IdentitiesOnly to prevent "Too many auth failures"
         if key_path:
             expanded = os.path.expanduser(key_path)
-            cmd.extend(['-i', expanded])
+            cmd.extend(['-o', 'IdentitiesOnly=yes', '-i', expanded])
 
         return cmd

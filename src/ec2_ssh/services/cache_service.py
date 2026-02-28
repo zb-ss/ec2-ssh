@@ -76,6 +76,46 @@ class CacheService:
         except IOError as e:
             logger.error(f"Error writing cache file: {e}")
 
+    def load_any(self) -> Optional[List[dict]]:
+        """Load instances from cache regardless of TTL.
+
+        Returns cached data even if expired. Returns None only if
+        no cache file exists or the file is corrupt.
+
+        Returns:
+            List of instance dictionaries, or None if no cache available.
+        """
+        if not self.CACHE_PATH.exists():
+            return None
+
+        try:
+            with open(self.CACHE_PATH, 'r') as f:
+                cache_data = json.load(f)
+
+            instances = cache_data.get('instances')
+            if instances is None:
+                return None
+
+            age = self.get_age()
+            logger.debug("Loaded %d instances from cache (age: %s, stale: %s)",
+                         len(instances), age, age and age >= timedelta(seconds=self.ttl_seconds))
+            return instances
+
+        except (json.JSONDecodeError, IOError, KeyError, ValueError) as e:
+            logger.error("Error reading cache file: %s", e)
+            return None
+
+    def is_fresh(self) -> bool:
+        """Check if cache exists and is within TTL.
+
+        Returns:
+            True if cache is valid and not expired.
+        """
+        age = self.get_age()
+        if age is None:
+            return False
+        return age < timedelta(seconds=self.ttl_seconds)
+
     def is_valid(self) -> bool:
         """Check if cache exists and is not expired.
 

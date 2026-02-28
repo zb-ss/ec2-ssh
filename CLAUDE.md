@@ -114,16 +114,19 @@ src/ec2_ssh/
 - Uses reactive data patterns and CSS-like styling
 
 **SSH Connection Strategy:**
-- Uses OpenSSH ProxyJump (`-J user@bastion`) for bastion hosts
-- Always includes `IdentitiesOnly=yes` when using `-i` flag to prevent "Too many authentication failures"
+- Uses OpenSSH ProxyJump (`-J`) or ProxyCommand for bastion hosts (depending on bastion_key)
+- `IdentitiesOnly=yes` only added when `-i` flag is present (prevents "Too many auth failures" without breaking agent-only auth)
 - SSH key auto-discovery searches `~/.ssh/` with multiple patterns (exact match, `.pem`, fuzzy matching)
-- External SSH sessions launched in new terminal window (detected via `terminal_service`)
+- External SSH sessions launched in new terminal window via wrapper script that keeps terminal open on failure
+- Terminal auto-detection supports gnome-terminal, konsole, alacritty, kitty, xterm, xfce4-terminal, mate-terminal, tilix, Terminal.app, iTerm.app, wt.exe
+- `terminal_emulator` config setting feeds into TerminalService preferred parameter
 
-**Instance Caching:**
+**Instance Caching (stale-while-revalidate):**
 - Cache stored in `~/.ec2_ssh_cache.json` with timestamp
-- Default TTL: 300 seconds (configurable via `cache_ttl_seconds`)
-- Bypass cache on explicit refresh in UI
-- Reduces startup time when managing many instances across regions
+- Default TTL: 3600 seconds / 1 hour (configurable via `cache_ttl_seconds`)
+- On startup: shows stale cached data immediately, then refreshes in background if expired
+- Force refresh via `R` key in instance list
+- `CacheService.load()` respects TTL; `load_any()` returns data regardless of age; `is_fresh()` checks TTL
 
 **Server Scanning:**
 - Scans run SSH commands or search files for keywords
@@ -134,6 +137,8 @@ src/ec2_ssh/
 **Connection Profiles:**
 - Define bastion/proxy configuration per environment
 - Applied to instances via connection rules with match conditions
+- When bastion_key is set → uses ProxyCommand (allows separate bastion key)
+- When no bastion_key → uses simpler ProxyJump (`-J`)
 - Supports custom ProxyCommand for advanced scenarios
 
 **Configuration Migration:**
@@ -147,6 +152,8 @@ At runtime, the application creates and uses:
 - `~/.ec2_ssh_config.json` — Main configuration (keys, profiles, scan rules)
 - `~/.ec2_ssh_cache.json` — Cached instance list with timestamp
 - `~/.ec2_ssh_keywords.json` — Keyword scan results store
+- `~/.ec2_ssh_logs/ec2_ssh.log` — Application log (SSH commands, errors, cache status)
+- `~/.ec2_ssh_logs/ec2ssh_*.sh` — Temporary wrapper scripts for SSH terminal sessions
 
 ## Dependencies
 

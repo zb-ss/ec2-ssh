@@ -161,17 +161,21 @@ class ConnectionService(ConnectionServiceInterface):
             IP address or hostname to connect to.
         """
         if profile and profile.bastion_host:
-            # Connection through bastion - use private IP
-            host = instance.get('private_ip') or instance.get('public_ip', '')
+            # Connection through bastion — prefer private IP
+            private_ip = instance.get('private_ip')
+            public_ip = instance.get('public_ip')
+            host = private_ip if private_ip else (public_ip or '')
             logger.debug(
-                "Using private IP for bastion connection: %s",
-                host
+                "Bastion connection: target=%s (private=%s, public=%s)",
+                host, private_ip, public_ip
             )
         else:
-            # Direct connection - use public IP
-            host = instance.get('public_ip', '')
+            # Direct connection — prefer public IP, fall back to private
+            public_ip = instance.get('public_ip')
+            private_ip = instance.get('private_ip')
+            host = public_ip if public_ip else (private_ip or '')
             logger.debug(
-                "Using public IP for direct connection: %s",
-                host
+                "Direct connection: target=%s (public=%s, private=%s)",
+                host, public_ip, private_ip
             )
         return host

@@ -10,144 +10,122 @@ from textual.widgets import Header, Footer, Static, Markdown
 
 
 HELP_TEXT = """
-# EC2 Connect v2.0 — User Manual
-
-## Overview
-
-EC2 Connect is a Terminal User Interface (TUI) for managing and connecting to AWS EC2 instances.
-It provides SSH connections, file browsing, command execution, SCP transfers, and server scanning —
-all from a single interface.
+# EC2 Connect v2.0 — Help
 
 ## Main Menu
 
 | Option | Shortcut | Description |
 |--------|----------|-------------|
-| **List Instances** | `1` or `L` | Fetch and display all EC2 instances across AWS regions |
-| **Search** | `2` or `S` | Search instances by name/type/ID, and keyword scan results |
-| **Manage SSH Keys** | `3` or `K` | Configure SSH keys, auto-discovery, and SSH agent integration |
-| **Scan Servers** | `4` or `C` | Run configured scans on all running instances |
-| **Settings** | `5` or `T` | Edit configuration: username, cache, scan paths, theme |
-| **Quit** | `6` or `Q` | Exit the application |
+| **List Instances** | `1` or `L` | View all EC2 instances across AWS regions |
+| **Search** | `2` or `S` | Search instances and keyword scan results |
+| **Manage SSH Keys** | `3` or `K` | Configure SSH keys and SSH agent |
+| **Scan Servers** | `4` or `C` | Run scans on all running instances |
+| **Settings** | `5` or `T` | Edit configuration |
+| **Quit** | `6` or `Q` | Exit |
 
-## Instance List
-
-When you select **List Instances**, all EC2 instances are fetched (with caching).
+## Instance List Shortcuts
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Navigate | `↑` `↓` | Move between instances in the table |
-| Select | `Enter` | Open server actions for the selected instance |
-| SSH Connect | `S` | Quick SSH connect to the selected instance |
-| Search | `/` | Focus the search/filter input |
-| Refresh | `R` | Re-fetch instances from AWS (bypass cache) |
+| Navigate | `Up` / `Down` | Move between instances |
+| Select | `Enter` | Open server actions |
+| SSH Connect | `S` | Quick SSH to selected instance |
+| Browse Files | `B` | Open remote file browser |
+| Run Command | `C` | Open command overlay |
+| SCP Transfer | `T` | Open file transfer |
+| Search | `/` | Focus search input |
+| Refresh | `R` | Force-refresh from AWS |
 | Back | `Escape` | Return to main menu |
 
 ## Server Actions
 
-After selecting an instance, you can:
+| Action | What it does |
+|--------|-------------|
+| **Browse Files** | Interactive remote filesystem tree via SSH |
+| **Run Command** | Execute commands on the server (overlay panel, `Up`/`Down` for history) |
+| **SSH Connect** | Opens a **new terminal window** with SSH session |
+| **SCP Transfer** | Upload/download files via SCP |
+| **View Scan Results** | Show keyword scan data for this server |
 
-### Browse Files
-Opens a remote file browser showing the server's filesystem via SSH. Directories expand lazily
-on click. Configured scan paths appear as root nodes.
+## Instance Caching
 
-### Run Command
-Opens a command overlay where you can type and execute commands on the remote server.
-Output appears in real-time. Use `↑`/`↓` to navigate command history.
+Instances are cached to `~/.ec2_ssh_cache.json` for fast startup.
 
-### SSH Connect
-Launches a **new terminal window** with an SSH session to the selected server.
-Automatically detects your terminal emulator (gnome-terminal, konsole, xfce4-terminal,
-Terminal.app, iTerm, etc.).
+| Scenario | Behavior |
+|----------|----------|
+| First launch (no cache) | Fetches from AWS with progress bar |
+| Restart within TTL | **Instant load** from cache, no AWS call |
+| Restart after TTL | Shows stale data immediately, refreshes in background |
+| Press `R` | Force-refresh from AWS |
 
-### SCP Transfer
-Upload or download files via SCP. Supports bastion/proxy connections transparently.
+Default TTL is **1 hour** (`cache_ttl_seconds: 3600` in config).
+Background refresh shows a notification when complete (e.g., "2 more instances found").
 
-### View Scan Results
-Displays keyword scan data previously collected from this server.
+## Connection Profiles (Bastion Support)
 
-## Connection Profiles & Bastion Support
+For instances behind a bastion host, add to `~/.ec2_ssh_config.json`:
 
-EC2 Connect supports SSH connections through bastion hosts using ProxyJump (`-J`).
-
-Configure in `~/.ec2_ssh_config.json`:
 ```json
 {
   "connection_profiles": [
     {
       "name": "my-bastion",
       "bastion_host": "bastion.example.com",
-      "bastion_user": "ubuntu",
+      "bastion_user": "ec2-user",
+      "bastion_key": "~/.ssh/bastion-key.pem",
       "ssh_port": 22
     }
   ],
   "connection_rules": [
     {
       "name": "private-instances",
-      "match_conditions": {"has_public_ip": "false"},
+      "match_conditions": {"name_contains": "myapp"},
       "profile_name": "my-bastion"
     }
   ]
 }
 ```
 
+When a rule matches, the connection automatically routes through the bastion
+and targets the instance's **private IP**.
+
+**Match conditions:** `name_contains`, `region`, `state`
+
 ## SSH Key Management
 
-EC2 Connect auto-discovers SSH keys in `~/.ssh/` based on the AWS key pair name.
-It searches for patterns like `key_name.pem`, `id_rsa_key_name`, etc.
+Keys are auto-discovered in `~/.ssh/` by AWS key pair name
+(e.g., `mykey`, `mykey.pem`, `id_rsa_mykey`).
 
-You can also:
-- Set instance-specific keys
-- Set a default key for all instances
-- Add keys to SSH agent
-- Fix key file permissions (600/400)
+You can also set keys per-instance or set a default key in Settings.
 
-## Scanning & Keywords
+## Configuration Reference
 
-Configure paths and commands to scan on servers:
-
-```json
-{
-  "default_scan_paths": ["~/shared/", "/var/log/"],
-  "scan_rules": [
-    {
-      "name": "web-servers",
-      "match_conditions": {"name_contains": "web"},
-      "scan_paths": ["/var/www", "/var/log/nginx"],
-      "scan_commands": ["pm2 list", "systemctl status nginx"]
-    }
-  ]
-}
-```
-
-Results are stored in the keyword store and searchable via the Search screen.
-
-## Configuration
-
-All settings are stored in `~/.ec2_ssh_config.json`. Key fields:
+Config file: `~/.ec2_ssh_config.json`
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `default_username` | `ec2-user` | SSH username for connections |
-| `cache_ttl_seconds` | `300` | Instance cache duration (5 min) |
+| `default_username` | `ec2-user` | SSH username |
+| `default_key` | (empty) | Default SSH key for all instances |
+| `cache_ttl_seconds` | `3600` | Cache duration (1 hour) |
+| `terminal_emulator` | `auto` | Terminal: `auto`, `gnome-terminal`, `konsole`, `alacritty`, etc. |
 | `default_scan_paths` | `["~/shared/"]` | Paths to scan on all servers |
-| `terminal_emulator` | `auto` | Preferred terminal (`auto` for detection) |
-| `theme` | `dark` | UI theme (`dark` or `light`) |
+| `theme` | `dark` | UI theme |
 
-## Keyboard Shortcuts (Global)
+## Logging & Debugging
+
+Logs: `~/.ec2_ssh_logs/ec2_ssh.log`
+Debug mode: `ec2-ssh --debug`
+
+SSH failures keep the terminal window **open** so you can read the error message.
+
+## Global Shortcuts
 
 | Key | Action |
 |-----|--------|
-| `Q` | Quit application |
-| `?` or `H` | Open this help screen |
-| `Escape` | Go back / close overlay |
-| `Tab` | Next focusable widget |
-| `Shift+Tab` | Previous focusable widget |
-
-## Requirements
-
-- **Python** 3.8+
-- **AWS credentials** configured (`~/.aws/credentials` or env vars)
-- **Permissions**: `ec2:DescribeInstances`, `ec2:DescribeRegions`
+| `Q` | Quit |
+| `?` or `H` | This help screen |
+| `Escape` | Go back / close |
+| `Tab` / `Shift+Tab` | Next / previous widget |
 """
 
 

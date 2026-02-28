@@ -49,6 +49,12 @@ Launch the application:
 ec2-ssh
 ```
 
+For debug logging (prints to stderr and writes to `~/.ec2_ssh_logs/ec2_ssh.log`):
+
+```bash
+ec2-ssh --debug
+```
+
 ### Main Menu
 
 Upon launch, you'll see 6 options:
@@ -85,7 +91,7 @@ All configuration is stored in `~/.ec2_ssh_config.json`. The file is created aut
     "i-0123456789abcdef0": "/home/user/.ssh/special-key.pem"
   },
   "default_username": "ec2-user",
-  "cache_ttl_seconds": 300,
+  "cache_ttl_seconds": 3600,
   "terminal_emulator": "auto",
   "theme": "dark",
   "keyword_store_path": "~/.ec2_ssh_keywords.json",
@@ -104,8 +110,8 @@ All configuration is stored in `~/.ec2_ssh_config.json`. The file is created aut
 | `default_key` | string | Default SSH key path for all instances |
 | `instance_keys` | object | Instance-specific key mappings `{instance_id: key_path}` |
 | `default_username` | string | Default SSH username (default: `ec2-user`) |
-| `cache_ttl_seconds` | int | Instance cache TTL in seconds (default: 300) |
-| `terminal_emulator` | string | Terminal preference: `auto`, `gnome-terminal`, `iterm`, `wt`, etc. |
+| `cache_ttl_seconds` | int | Instance cache TTL in seconds (default: 3600 = 1 hour) |
+| `terminal_emulator` | string | Terminal preference: `auto`, `gnome-terminal`, `konsole`, `alacritty`, `kitty`, `xfce4-terminal`, `Terminal.app`, `iTerm.app`, `wt.exe`, etc. |
 | `theme` | string | UI theme: `dark` or `light` |
 | `keyword_store_path` | string | Path to keyword scan results file |
 | `default_scan_paths` | array | Default paths to scan on all instances |
@@ -177,18 +183,23 @@ Connection profiles define how to connect to instances, including bastion/jump h
 }
 ```
 
-This configuration automatically uses the bastion host when connecting to any instance matching the rule (e.g., name contains "private" in `us-west-2`). The SSH connection uses OpenSSH ProxyJump (`-J` flag) internally.
+This configuration automatically uses the bastion host when connecting to any instance matching the rule (e.g., name contains "private" in `us-west-2`). When a bastion profile matches, the target host switches to the instance's **private IP** automatically.
+
+**How proxy works internally:**
+- If `bastion_key` is set → uses `ProxyCommand` with `-i` flag (allows separate key for bastion)
+- If no `bastion_key` → uses simpler `ProxyJump` (`-J` flag)
+- If `proxy_command` is set → uses the raw ProxyCommand as-is (advanced)
 
 **Connection profile fields:**
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Profile identifier |
-| `bastion_host` | string | Bastion hostname or IP (optional) |
-| `bastion_user` | string | Username for bastion connection (optional) |
-| `bastion_key` | string | SSH key for bastion authentication (optional) |
-| `proxy_command` | string | Custom ProxyCommand for advanced scenarios (optional) |
-| `ssh_port` | int | SSH port to use (default: 22) |
+| `bastion_host` | string | Bastion hostname or IP |
+| `bastion_user` | string | Username for bastion connection (default: `ec2-user`) |
+| `bastion_key` | string | SSH key for bastion authentication (optional — if omitted, uses same key as target) |
+| `proxy_command` | string | Custom ProxyCommand for advanced scenarios (optional — overrides bastion settings) |
+| `ssh_port` | int | SSH port for bastion (default: 22) |
 
 **Connection rule fields:**
 
@@ -197,6 +208,8 @@ This configuration automatically uses the bastion host when connecting to any in
 | `name` | string | Rule description |
 | `match_conditions` | object | Conditions to match instances (same as scan rules) |
 | `profile_name` | string | Name of ConnectionProfile to apply |
+
+Rules are evaluated in order — the first matching rule wins.
 
 ## Development
 
@@ -243,7 +256,37 @@ EC2 Connect v2.0 uses a modular architecture built on Textual TUI framework:
 - All services implement abstract interfaces (`services/interfaces.py`)
 - Screens access services via `self.app.<service>` (dependency injection)
 - Configuration is dataclass-based with schema versioning and migration support
-- SSH uses ProxyJump (`-J`) for bastion hosts and `IdentitiesOnly=yes` to prevent "Too many authentication failures"
+- SSH uses ProxyJump (`-J`) for bastion hosts and `IdentitiesOnly=yes` (only when a key is specified) to prevent "Too many authentication failures"
+
+## Instance Caching
+
+EC2 Connect uses a **stale-while-revalidate** caching strategy for fast startup:
+
+| Scenario | Behavior |
+|----------|----------|
+| **First launch** (no cache) | Fetches from AWS with progress indicator |
+| **Restart within TTL** (cache fresh) | Instant load from cache — no AWS call |
+| **Restart after TTL** (cache stale) | Shows stale data immediately, refreshes from AWS in the background |
+| **Manual refresh** (`R` key) | Force-fetches from AWS with progress indicator |
+
+When a background refresh completes, a notification shows the result:
+- *"Refreshed: 12 instances (2 more)"* — new servers appeared
+- *"Refreshed: 10 instances (1 fewer)"* — one was terminated
+- *"Refreshed: 11 instances (up to date)"* — no changes
+
+**Default TTL is 1 hour** (`cache_ttl_seconds: 3600`). Cache is stored at `~/.ec2_ssh_cache.json`.
+
+## Logging & Debugging
+
+Logs are always written to `~/.ec2_ssh_logs/ec2_ssh.log`. This includes SSH commands, terminal detection, connection profile resolution, and cache status.
+
+For verbose output on stderr (useful for debugging):
+
+```bash
+ec2-ssh --debug
+```
+
+When SSH fails, the terminal window **stays open** showing the error message and exit code — press Enter to close it.
 
 ## Troubleshooting
 
@@ -257,6 +300,26 @@ aws sts get-caller-identity
 ```
 
 Verify permissions for `ec2:DescribeInstances` and `ec2:DescribeRegions`.
+
+### SSH Connection Fails (window closes immediately)
+
+Check the terminal window — it now stays open on failure showing the SSH error. Common causes:
+
+1. **Wrong key**: Check `instance_keys` in config, or set `default_key`
+2. **Wrong username**: Default is `ec2-user`; Ubuntu uses `ubuntu`, Amazon Linux uses `ec2-user`
+3. **No key configured**: If no key is set and no agent key matches, SSH falls back to password auth (which EC2 doesn't support)
+4. **Security group**: Ensure port 22 is open from your IP
+
+Check the log for the exact SSH command: `cat ~/.ec2_ssh_logs/ec2_ssh.log | grep "SSH command"`
+
+### Bastion Connection Hangs
+
+If the terminal opens but SSH hangs:
+
+1. **No connection profile configured**: Check that `connection_profiles` and `connection_rules` are set in `~/.ec2_ssh_config.json`
+2. **Wrong bastion host**: Verify the bastion is reachable: `ssh -i key.pem user@bastion-host`
+3. **Wrong bastion key**: If the bastion uses a different key, set `bastion_key` in the profile
+4. **Private IP unreachable**: The bastion must be able to reach the target's private IP
 
 ### SSH Agent Not Running
 
@@ -292,20 +355,6 @@ Auto-discovery searches `~/.ssh/` directory using multiple patterns:
 - Fuzzy matching on filename stems
 
 If keys are stored elsewhere, provide the full path manually.
-
-### Instance List Not Updating
-
-By default, instances are cached for 5 minutes (configurable via `cache_ttl_seconds`). To force refresh:
-
-1. Select **List Instances** from main menu
-2. The list loads from cache if valid
-3. Use the refresh option in the UI or restart the app after cache TTL expires
-
-Or manually delete the cache file:
-
-```bash
-rm ~/.ec2_ssh_cache.json
-```
 
 ## License
 

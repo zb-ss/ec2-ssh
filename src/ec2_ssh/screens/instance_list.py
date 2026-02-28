@@ -47,11 +47,38 @@ class InstanceListScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        """Load instances when screen is mounted."""
-        self._fetch_instances()
+        """Load instances using stale-while-revalidate strategy.
+
+        1. If any cached data exists (even expired), show it immediately
+        2. If cache is still fresh, done — no AWS call needed
+        3. If cache is stale or empty, fetch from AWS in the background
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Try to show cached data immediately for instant startup
+        stale_data = self.app.cache_service.load_any()
+        if stale_data:
+            self._instances = stale_data
+            self.app.instances = stale_data
+            self._update_table()
+            self._update_status_bar()
+            logger.info("Loaded %d instances from cache (age: %s)",
+                        len(stale_data), self.app.cache_service.get_age())
+
+        # If cache is fresh, we're done
+        if self.app.cache_service.is_fresh():
+            logger.info("Cache is fresh, skipping AWS fetch")
+            return
+
+        # Cache is stale or empty — fetch in background
+        if stale_data:
+            self._background_refresh()
+        else:
+            self._fetch_instances()
 
     def _fetch_instances(self, force_refresh: bool = False) -> None:
-        """Fetch instances from AWS via worker.
+        """Fetch instances from AWS via worker (blocking with progress indicator).
 
         Args:
             force_refresh: If True, bypass cache.
@@ -59,10 +86,25 @@ class InstanceListScreen(Screen):
         progress = self.query_one(ProgressIndicator)
         progress.start("Loading instances...")
 
-        # Run async fetch in worker
         self.run_worker(
             self.app.aws_service.fetch_instances_cached(force_refresh=force_refresh),
             name="fetch_instances",
+            exclusive=True
+        )
+
+    def _background_refresh(self) -> None:
+        """Refresh instances from AWS in the background.
+
+        Shows a subtle notification instead of a blocking progress bar.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("Starting background refresh of instances")
+        self.app.notify("Refreshing instances in background...", severity="information")
+
+        self.run_worker(
+            self.app.aws_service.fetch_instances_cached(force_refresh=True),
+            name="background_refresh",
             exclusive=True
         )
 
@@ -72,50 +114,81 @@ class InstanceListScreen(Screen):
         Args:
             event: Worker state changed event.
         """
-        if event.worker.name == "fetch_instances":
+        if event.worker.name in ("fetch_instances", "background_refresh"):
             if event.worker.is_finished:
-                progress = self.query_one(ProgressIndicator)
-                progress.stop()
+                is_background = event.worker.name == "background_refresh"
+
+                # Stop progress indicator for foreground fetches
+                if not is_background:
+                    progress = self.query_one(ProgressIndicator)
+                    progress.stop()
 
                 if event.worker.error:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error("Failed to fetch instances: %s", event.worker.error)
-
-                    error_msg = str(event.worker.error)
-                    if "NoCredentialsError" in error_msg or "credentials" in error_msg.lower():
-                        self.app.notify(
-                            "AWS credentials not found. Please configure AWS credentials.",
-                            severity="error"
-                        )
-                    elif "EndpointConnectionError" in error_msg or "timed out" in error_msg.lower():
-                        self.app.notify(
-                            "Network error: Unable to connect to AWS. Check your connection.",
-                            severity="error"
-                        )
-                    elif "AccessDenied" in error_msg or "UnauthorizedOperation" in error_msg:
-                        self.app.notify(
-                            "Access denied: Check your AWS IAM permissions for EC2.",
-                            severity="error"
-                        )
-                    else:
-                        self.app.notify(
-                            f"Error loading instances: {error_msg}",
-                            severity="error"
-                        )
-                    self._instances = []
+                    self._handle_fetch_error(event.worker.error, is_background)
                 else:
-                    self._instances = event.worker.result or []
-                    self.app.instances = self._instances
+                    new_instances = event.worker.result or []
+                    old_count = len(self._instances)
+                    self._instances = new_instances
+                    self.app.instances = new_instances
+                    self._update_table()
+                    self._update_status_bar()
 
-                    if not self._instances:
+                    if not new_instances:
                         self.app.notify(
                             "No EC2 instances found in any region.",
                             severity="information"
                         )
+                    elif is_background and new_instances:
+                        diff = len(new_instances) - old_count
+                        if diff != 0:
+                            word = "more" if diff > 0 else "fewer"
+                            self.app.notify(
+                                f"Refreshed: {len(new_instances)} instances ({abs(diff)} {word})",
+                                severity="information"
+                            )
+                        else:
+                            self.app.notify(
+                                f"Refreshed: {len(new_instances)} instances (up to date)",
+                                severity="information"
+                            )
 
-                self._update_table()
-                self._update_status_bar()
+    def _handle_fetch_error(self, error: BaseException, is_background: bool) -> None:
+        """Handle AWS fetch errors with user-friendly messages.
+
+        Args:
+            error: The exception from the worker.
+            is_background: Whether this was a background refresh.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error("Failed to fetch instances: %s", error)
+
+        error_msg = str(error)
+        if "NoCredentialsError" in error_msg or "credentials" in error_msg.lower():
+            self.app.notify(
+                "AWS credentials not found. Please configure AWS credentials.",
+                severity="error"
+            )
+        elif "EndpointConnectionError" in error_msg or "timed out" in error_msg.lower():
+            self.app.notify(
+                "Network error: Unable to connect to AWS. Check your connection.",
+                severity="error"
+            )
+        elif "AccessDenied" in error_msg or "UnauthorizedOperation" in error_msg:
+            self.app.notify(
+                "Access denied: Check your AWS IAM permissions for EC2.",
+                severity="error"
+            )
+        else:
+            self.app.notify(
+                f"Error loading instances: {error_msg}",
+                severity="error"
+            )
+
+        # Only clear data if foreground fetch with no existing data
+        if not is_background and not self._instances:
+            self._update_table()
+            self._update_status_bar()
 
     def _update_table(self) -> None:
         """Update instance table with current data."""
@@ -152,9 +225,8 @@ class InstanceListScreen(Screen):
         self.app.pop_screen()
 
     def action_refresh(self) -> None:
-        """Refresh instance list from AWS."""
+        """Force-refresh instance list from AWS."""
         self._fetch_instances(force_refresh=True)
-        self.app.notify("Refreshing instances...", severity="information")
 
     def action_focus_search(self) -> None:
         """Focus the search input."""
@@ -204,6 +276,11 @@ class InstanceListScreen(Screen):
         try:
             profile = self.app.connection_service.resolve_profile(instance)
             host = self.app.connection_service.get_target_host(instance, profile)
+
+            if not host:
+                self.app.notify("No IP address available for this instance.", severity="error")
+                return
+
             proxy_args = []
             if profile:
                 proxy_args = self.app.connection_service.get_proxy_args(profile)
@@ -213,10 +290,17 @@ class InstanceListScreen(Screen):
             if not key_path and instance.get('key_name'):
                 key_path = self.app.ssh_service.discover_key(instance['key_name'])
 
-            ssh_cmd = self.app.ssh_service.build_ssh_command(host, username, key_path, proxy_args=proxy_args)
+            ssh_cmd = self.app.ssh_service.build_ssh_command(
+                host=host,
+                username=username,
+                key_path=key_path,
+                proxy_args=proxy_args,
+            )
 
             if self.app.terminal_service.launch_ssh_in_terminal(ssh_cmd):
-                self.app.notify(f"SSH session launched for {instance.get('name', 'instance')}")
+                name = instance.get('name') or instance.get('id', 'instance')
+                via = f" via {profile.bastion_host}" if profile and profile.bastion_host else ""
+                self.app.notify(f"SSH session launched for {name}{via}")
             else:
                 self.app.notify("No terminal emulator detected. Set 'terminal_emulator' in settings.", severity="error")
         except Exception as e:

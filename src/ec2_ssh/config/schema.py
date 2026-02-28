@@ -82,7 +82,7 @@ class AppConfig:
     default_key: str = ""
     instance_keys: Dict[str, str] = field(default_factory=dict)
     default_username: str = "ec2-user"
-    cache_ttl_seconds: int = 300
+    cache_ttl_seconds: int = 3600
     default_scan_paths: List[str] = field(default_factory=lambda: ["~/shared/"])
     scan_rules: List[ScanRule] = field(default_factory=list)
     connection_profiles: List[ConnectionProfile] = field(default_factory=list)

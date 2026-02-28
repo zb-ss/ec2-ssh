@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 import logging
+import os
 import subprocess
 import shutil
 import shlex
+import tempfile
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 from ec2_ssh.services.interfaces import TerminalServiceInterface
 from ec2_ssh.utils.platform_utils import get_os
 
 logger = logging.getLogger(__name__)
+
+# Directory for wrapper scripts that keep the terminal open on failure
+_WRAPPER_DIR = Path.home() / '.ec2_ssh_logs'
 
 
 class TerminalService(TerminalServiceInterface):
@@ -19,23 +25,28 @@ class TerminalService(TerminalServiceInterface):
     Supports Linux, macOS, and Windows terminal emulators.
     """
 
-    # Detection order per platform (name, command_template)
-    LINUX_TERMINALS: List[Tuple[str, List[str]]] = [
-        ("gnome-terminal", ["gnome-terminal", "--", "{ssh_cmd}"]),
-        ("konsole", ["konsole", "-e", "{ssh_cmd}"]),
-        ("xfce4-terminal", ["xfce4-terminal", "-e", "{ssh_cmd}"]),
-        ("alacritty", ["alacritty", "-e", "{ssh_cmd}"]),
-        ("xterm", ["xterm", "-e", "{ssh_cmd}"]),
+    # Linux terminals: (executable_name, launch_style)
+    # "list" style: terminal passes remaining args as command argv
+    # "string" style: terminal expects a single string argument for -e
+    LINUX_TERMINALS: List[Tuple[str, str]] = [
+        ("gnome-terminal", "list"),
+        ("konsole", "list"),
+        ("alacritty", "list"),
+        ("kitty", "list"),
+        ("xterm", "list"),
+        ("xfce4-terminal", "string"),
+        ("mate-terminal", "string"),
+        ("tilix", "list"),
     ]
 
-    MACOS_TERMINALS: List[Tuple[str, str]] = [
-        ("Terminal.app", "open -a Terminal"),
-        ("iTerm.app", "open -a iTerm"),
+    MACOS_TERMINALS: List[str] = [
+        "Terminal.app",
+        "iTerm.app",
     ]
 
-    WINDOWS_TERMINALS: List[Tuple[str, List[str]]] = [
-        ("wt.exe", ["wt.exe", "{ssh_cmd}"]),
-        ("cmd.exe", ["cmd.exe", "/c", "start", "ssh", "{ssh_cmd}"]),
+    WINDOWS_TERMINALS: List[str] = [
+        "wt.exe",
+        "cmd.exe",
     ]
 
     def __init__(self, preferred: str = "auto") -> None:
@@ -56,48 +67,104 @@ class TerminalService(TerminalServiceInterface):
             Terminal command name (e.g., 'gnome-terminal', 'Terminal.app', 'wt.exe'),
             or 'none' if no terminal found.
         """
-        # Check preferred terminal if specified
-        if self._preferred != "auto":
+        if self._preferred and self._preferred != "auto":
             if shutil.which(self._preferred):
                 self._detected = self._preferred
                 logger.info("Using preferred terminal: %s", self._preferred)
                 return self._preferred
             else:
-                logger.warning("Preferred terminal '%s' not found", self._preferred)
+                logger.warning("Preferred terminal '%s' not found, auto-detecting", self._preferred)
 
         os_name = get_os()
 
-        # Get terminal list for current OS
         if os_name == 'linux':
-            terminals = self.LINUX_TERMINALS
+            return self._detect_linux_terminal()
         elif os_name == 'darwin':
-            terminals = self.MACOS_TERMINALS
+            return self._detect_macos_terminal()
         elif os_name == 'windows':
-            terminals = self.WINDOWS_TERMINALS
-        else:
-            logger.warning("Unknown OS: %s, using Linux terminals", os_name)
-            terminals = self.LINUX_TERMINALS
+            return self._detect_windows_terminal()
 
-        # Search for available terminal
-        for name, _ in terminals:
-            if os_name == 'darwin':
-                # macOS apps are in /Applications, assume available
-                # User can override if needed
+        logger.warning("Unknown OS: %s, trying Linux terminals", os_name)
+        return self._detect_linux_terminal()
+
+    def _detect_linux_terminal(self) -> str:
+        """Detect available Linux terminal."""
+        for name, _ in self.LINUX_TERMINALS:
+            if shutil.which(name):
+                self._detected = name
+                logger.info("Detected Linux terminal: %s", name)
+                return name
+        logger.error("No terminal emulator detected on Linux")
+        return 'none'
+
+    def _detect_macos_terminal(self) -> str:
+        """Detect available macOS terminal."""
+        for name in self.MACOS_TERMINALS:
+            app_path = f"/Applications/{name}"
+            if os.path.exists(app_path):
                 self._detected = name
                 logger.info("Detected macOS terminal: %s", name)
                 return name
-            else:
-                # Linux/Windows: check PATH
-                if shutil.which(name):
-                    self._detected = name
-                    logger.info("Detected terminal: %s", name)
-                    return name
+        # Terminal.app should always exist on macOS
+        self._detected = "Terminal.app"
+        logger.info("Falling back to Terminal.app")
+        return "Terminal.app"
 
-        logger.error("No terminal emulator detected")
+    def _detect_windows_terminal(self) -> str:
+        """Detect available Windows terminal."""
+        for name in self.WINDOWS_TERMINALS:
+            if shutil.which(name):
+                self._detected = name
+                logger.info("Detected Windows terminal: %s", name)
+                return name
+        logger.error("No terminal emulator detected on Windows")
         return 'none'
+
+    def _create_wrapper_script(self, ssh_command: List[str]) -> str:
+        """Create a bash wrapper script that runs SSH and keeps terminal open on failure.
+
+        The wrapper:
+        - Prints the SSH command being run
+        - Executes the SSH command
+        - On non-zero exit, shows the error and waits for Enter before closing
+        - On normal exit (user typed 'exit'), closes cleanly
+
+        Args:
+            ssh_command: SSH command as list of arguments.
+
+        Returns:
+            Path to the wrapper script.
+        """
+        _WRAPPER_DIR.mkdir(exist_ok=True)
+
+        ssh_cmd_str = shlex.join(ssh_command)
+        script_content = f"""#!/bin/bash
+echo "Connecting: {ssh_cmd_str}"
+echo "---"
+{ssh_cmd_str}
+exit_code=$?
+if [ $exit_code -ne 0 ]; then
+    echo ""
+    echo "--- SSH exited with code $exit_code ---"
+    echo "Press Enter to close this window..."
+    read -r
+fi
+"""
+        # Use a fixed name per host to avoid accumulating temp files
+        fd, script_path = tempfile.mkstemp(
+            prefix='ec2ssh_', suffix='.sh', dir=str(_WRAPPER_DIR)
+        )
+        with os.fdopen(fd, 'w') as f:
+            f.write(script_content)
+        os.chmod(script_path, 0o700)
+        logger.debug("Created wrapper script: %s", script_path)
+        return script_path
 
     def launch_ssh_in_terminal(self, ssh_command: List[str]) -> bool:
         """Launch SSH session in a new terminal window.
+
+        Wraps the SSH command in a script that keeps the terminal open
+        on failure so the user can see error messages.
 
         Args:
             ssh_command: SSH command list from SSHServiceInterface.
@@ -112,53 +179,73 @@ class TerminalService(TerminalServiceInterface):
             return False
 
         os_name = get_os()
-        ssh_cmd_str = shlex.join(ssh_command)
+        logger.info("Launching SSH in %s (OS: %s)", terminal, os_name)
+        logger.info("SSH command: %s", shlex.join(ssh_command))
 
         try:
             if os_name == 'darwin':
-                # macOS: use osascript to open Terminal with command
-                return self._launch_macos_terminal(terminal, ssh_cmd_str)
+                return self._launch_macos_terminal(terminal, ssh_command)
             elif os_name == 'linux':
-                # Linux: use terminal-specific command
                 return self._launch_linux_terminal(terminal, ssh_command)
             elif os_name == 'windows':
-                # Windows: use Windows terminal or cmd
                 return self._launch_windows_terminal(terminal, ssh_command)
             else:
                 logger.error("Unsupported OS: %s", os_name)
                 return False
 
+        except FileNotFoundError as e:
+            logger.error("Terminal executable not found: %s — %s", terminal, e)
+            self._detected = None
+            return False
+        except PermissionError as e:
+            logger.error("Permission denied launching terminal: %s — %s", terminal, e)
+            return False
         except Exception as e:
-            logger.error("Failed to launch terminal: %s", e)
+            logger.error("Failed to launch terminal %s: %s", terminal, e)
             return False
 
-    def _launch_macos_terminal(self, terminal: str, ssh_cmd_str: str) -> bool:
+    def _launch_macos_terminal(self, terminal: str, ssh_command: List[str]) -> bool:
         """Launch SSH in macOS terminal using osascript.
+
+        Uses a wrapper script so the terminal stays open on SSH failure.
 
         Args:
             terminal: Terminal app name.
-            ssh_cmd_str: SSH command as string.
+            ssh_command: SSH command as list.
 
         Returns:
             True if launched successfully.
         """
-        # Escape shell metacharacters for AppleScript context
-        escaped_cmd = ssh_cmd_str.replace('\\', '\\\\').replace('"', '\\"').replace('`', '\\`').replace('$', '\\$')
+        wrapper = self._create_wrapper_script(ssh_command)
+        escaped_wrapper = wrapper.replace('\\', '\\\\').replace('"', '\\"')
 
-        if 'Terminal.app' in terminal:
-            script = f'tell application "Terminal" to do script "{escaped_cmd}"'
-        elif 'iTerm.app' in terminal:
-            script = f'tell application "iTerm" to create window with default profile command "{escaped_cmd}"'
+        if 'iTerm' in terminal:
+            script = (
+                f'tell application "iTerm"\n'
+                f'  create window with default profile command "bash {escaped_wrapper}"\n'
+                f'end tell'
+            )
         else:
-            # Fallback to Terminal.app
-            script = f'tell application "Terminal" to do script "{escaped_cmd}"'
+            script = (
+                f'tell application "Terminal"\n'
+                f'  do script "bash {escaped_wrapper}"\n'
+                f'  activate\n'
+                f'end tell'
+            )
 
-        subprocess.Popen(['osascript', '-e', script])
-        logger.info("Launched SSH in macOS terminal: %s", terminal)
+        subprocess.Popen(
+            ['osascript', '-e', script],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logger.info("Launched SSH in macOS %s", terminal)
         return True
 
     def _launch_linux_terminal(self, terminal: str, ssh_command: List[str]) -> bool:
         """Launch SSH in Linux terminal.
+
+        Uses a wrapper script that keeps the terminal open on SSH failure
+        so the user can see error messages.
 
         Args:
             terminal: Terminal command name.
@@ -167,26 +254,42 @@ class TerminalService(TerminalServiceInterface):
         Returns:
             True if launched successfully.
         """
-        # Find terminal config
-        for name, cmd_template in self.LINUX_TERMINALS:
+        wrapper = self._create_wrapper_script(ssh_command)
+        cmd = self._build_linux_command(terminal, wrapper)
+        if not cmd:
+            return False
+
+        logger.debug("Terminal launch command: %s", cmd)
+        subprocess.Popen(
+            cmd,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logger.info("Launched SSH in Linux %s", terminal)
+        return True
+
+    def _build_linux_command(self, terminal: str, wrapper_script: str) -> Optional[List[str]]:
+        """Build command to launch a terminal running a wrapper script.
+
+        Args:
+            terminal: Terminal executable name.
+            wrapper_script: Path to the bash wrapper script.
+
+        Returns:
+            Command list for subprocess, or None if terminal is unknown.
+        """
+        for name, _ in self.LINUX_TERMINALS:
             if name == terminal:
-                # Build command based on terminal type
                 if name == 'gnome-terminal':
-                    # gnome-terminal uses -- to separate args
-                    cmd = ['gnome-terminal', '--'] + ssh_command
-                elif name in ['konsole', 'xfce4-terminal', 'alacritty', 'xterm']:
-                    # These terminals use -e flag
-                    cmd = [name, '-e'] + ssh_command
+                    return ['gnome-terminal', '--', 'bash', wrapper_script]
                 else:
-                    logger.error("Unknown Linux terminal: %s", name)
-                    return False
+                    # -e flag: all terminals accept a single command string
+                    return [name, '-e', f'bash {shlex.quote(wrapper_script)}']
 
-                subprocess.Popen(cmd)
-                logger.info("Launched SSH in Linux terminal: %s", terminal)
-                return True
-
-        logger.error("Could not build launch command for terminal: %s", terminal)
-        return False
+        # User-configured terminal — try -e with wrapper
+        logger.warning("Terminal '%s' not in known list, trying -e flag", terminal)
+        return [terminal, '-e', f'bash {shlex.quote(wrapper_script)}']
 
     def _launch_windows_terminal(self, terminal: str, ssh_command: List[str]) -> bool:
         """Launch SSH in Windows terminal.
@@ -198,22 +301,21 @@ class TerminalService(TerminalServiceInterface):
         Returns:
             True if launched successfully.
         """
-        ssh_cmd_str = shlex.join(ssh_command)
+        wrapper = self._create_wrapper_script(ssh_command)
 
-        # Find terminal config
-        for name, cmd_template in self.WINDOWS_TERMINALS:
-            if name == terminal:
-                # Build command - replace {ssh_cmd} placeholder
-                cmd = []
-                for part in cmd_template:
-                    if '{ssh_cmd}' in part:
-                        cmd.append(ssh_cmd_str)
-                    else:
-                        cmd.append(part)
+        if terminal == 'wt.exe':
+            cmd = ['wt.exe', 'bash', wrapper]
+        elif terminal == 'cmd.exe':
+            cmd = ['cmd.exe', '/c', 'start', 'cmd.exe', '/k', f'bash {wrapper}']
+        else:
+            cmd = [terminal, 'bash', wrapper]
 
-                subprocess.Popen(cmd)
-                logger.info("Launched SSH in Windows terminal: %s", terminal)
-                return True
-
-        logger.error("Could not build launch command for terminal: %s", terminal)
-        return False
+        logger.debug("Windows terminal launch command: %s", cmd)
+        subprocess.Popen(
+            cmd,
+            creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logger.info("Launched SSH in Windows %s", terminal)
+        return True

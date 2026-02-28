@@ -58,7 +58,7 @@ class EC2ConnectApp(App):
         self.connection_service = ConnectionService(self.config_manager)
         self.scan_service = ScanService(self.config_manager)
         self.keyword_store = KeywordStore(config.keyword_store_path)
-        self.terminal_service = TerminalService()
+        self.terminal_service = TerminalService(preferred=config.terminal_emulator)
         self.scp_service = SCPService()
 
     def action_show_help(self) -> None:
