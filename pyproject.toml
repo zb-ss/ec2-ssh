@@ -1,14 +1,15 @@
-# pyproject.toml
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
 name = "ec2-ssh"
-version = "0.1.0"
+version = "2.0.0"
+description = "Interactive TUI for managing AWS EC2 SSH connections"
 dependencies = [
     "boto3",
-    "tabulate"
+    "tabulate",
+    "textual>=0.40.0"
 ]
 requires-python = ">=3.8"
 
