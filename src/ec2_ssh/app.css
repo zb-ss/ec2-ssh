@@ -56,32 +56,23 @@ Button:hover {
 }
 
 Button:focus {
-    background: $primary;
-    border: tall $accent;
-    text-style: bold;
-}
-
-Button.-primary {
-    background: $primary;
-    color: $text;
-    border: tall $accent;
-    text-style: bold;
-}
-
-Button.-primary:hover {
     background: $accent;
+    color: $text;
     border: tall $warning;
+    text-style: bold;
 }
 
-Button.-error {
+#btn_quit,
+#btn_back {
+    color: $error;
+}
+
+#btn_quit:focus,
+#btn_back:focus {
     background: $error;
     color: $text;
     border: tall $error-darken-1;
-}
-
-Button.-error:hover {
-    background: $error-darken-1;
-    border: tall $error-darken-2;
+    text-style: bold;
 }
 
 /* ===================================================================
@@ -148,7 +139,8 @@ MainMenuScreen {
 }
 
 #menu_container {
-    width: 60;
+    width: 70%;
+    max-width: 60;
     height: auto;
     background: $surface;
     border: thick $primary;
@@ -260,7 +252,8 @@ ServerActionsScreen {
 }
 
 #actions_container {
-    width: 70;
+    width: 70%;
+    max-width: 70;
     height: auto;
     background: $surface;
     border: thick $primary;
@@ -534,8 +527,11 @@ RichLog {
    SCP TRANSFER SCREEN
    =================================================================== */
 
-#transfer_container {
+SCPTransferScreen {
     align: center middle;
+}
+
+#transfer_container {
     width: 80%;
     max-width: 80;
     height: auto;

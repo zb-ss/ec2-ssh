@@ -52,7 +52,7 @@ class SCPTransferScreen(Screen):
                 Static("[bold]Remote Path:[/bold]", id="remote_path_label"),
                 Input(placeholder="/path/to/remote/file", id="remote_path_input"),
                 Horizontal(
-                    Button("Start Transfer", variant="primary", id="transfer_button"),
+                    Button("Start Transfer", id="transfer_button"),
                     Button("Cancel", variant="default", id="cancel_button"),
                     id="button_container"
                 ),
