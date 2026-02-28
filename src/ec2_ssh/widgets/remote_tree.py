@@ -60,6 +60,8 @@ class RemoteTree(Tree):
         if self._profile:
             self._proxy_args = connection_service.get_proxy_args(self._profile)
         self._key_path = ssh_service.get_key_path(instance['id'])
+        if not self._key_path and instance.get('key_name'):
+            self._key_path = ssh_service.discover_key(instance['key_name'])
 
     def on_mount(self) -> None:
         """Populate root nodes on mount."""
@@ -96,11 +98,12 @@ class RemoteTree(Tree):
         loading_node = node.add("⏳ Loading...")
         self.refresh()
 
-        # Fetch in background worker
+        # Fetch in background worker (exit_on_error=False prevents crash on SSH failures)
         self.run_worker(
             self._fetch_directory_async(path),
             name=f"fetch_dir",
-            group="fetch_dir"
+            group="fetch_dir",
+            exit_on_error=False
         )
         # Store node reference for callback
         self._pending_fetch = (node, loading_node, path)
@@ -139,20 +142,29 @@ class RemoteTree(Tree):
                 pass
 
             if event.worker.error:
-                error_str = str(event.worker.error)
-                if "Permission denied" in error_str:
-                    error_node = node.add("❌ Permission denied")
-                    logger.warning("Permission denied accessing directory %s", path)
-                elif "No such file" in error_str or "does not exist" in error_str:
-                    error_node = node.add("❌ Directory not found")
-                    logger.warning("Directory not found: %s", path)
-                elif "timed out" in error_str.lower():
-                    error_node = node.add("❌ Connection timed out")
-                    logger.error("SSH timeout loading directory %s", path)
+                error_str = str(event.worker.error).lower()
+                if "permission denied" in error_str:
+                    node.add("🔒 Permission denied").allow_expand = False
+                    logger.warning("Permission denied accessing %s", path)
+                elif ("no such file" in error_str
+                      or "cannot access" in error_str
+                      or "does not exist" in error_str
+                      or "not found" in error_str
+                      or "not a directory" in error_str):
+                    node.add("📭 Path not found on server").allow_expand = False
+                    logger.info("Path not found on server: %s", path)
+                elif "timed out" in error_str:
+                    node.add("⏱ Connection timed out").allow_expand = False
+                    logger.error("SSH timeout loading %s", path)
+                elif "authentication" in error_str:
+                    node.add("🔑 Authentication failed").allow_expand = False
+                    logger.error("SSH auth failed for %s: %s", path, event.worker.error)
+                elif "connection refused" in error_str:
+                    node.add("🚫 Connection refused").allow_expand = False
+                    logger.error("Connection refused for %s", path)
                 else:
-                    error_node = node.add(f"❌ Error: {error_str}")
-                    logger.error("Failed to load directory %s: %s", path, event.worker.error)
-                error_node.allow_expand = False
+                    node.add(f"❌ {event.worker.error}").allow_expand = False
+                    logger.error("Failed to load %s: %s", path, event.worker.error)
             else:
                 entries = event.worker.result
                 self._cache[path] = entries
@@ -204,14 +216,23 @@ class RemoteTree(Tree):
             )
 
             if result.returncode != 0:
-                raise RuntimeError(f"SSH command failed: {result.stderr}")
+                stderr = result.stderr.strip()
+                # Extract the meaningful last line (skip SSH warnings)
+                stderr_lines = [
+                    line for line in stderr.splitlines()
+                    if not line.startswith("Warning:")
+                ]
+                error_msg = stderr_lines[-1] if stderr_lines else stderr
+                raise RuntimeError(error_msg)
 
             return self._parse_ls_output(result.stdout, path)
 
         except subprocess.TimeoutExpired:
-            raise RuntimeError("SSH command timed out")
+            raise RuntimeError("Connection timed out")
+        except RuntimeError:
+            raise
         except Exception as e:
-            raise RuntimeError(f"SSH command error: {str(e)}")
+            raise RuntimeError(str(e))
 
     def _parse_ls_output(self, output: str, parent_path: str) -> List[dict]:
         """Parse ls -la output into entry dictionaries.

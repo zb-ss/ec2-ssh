@@ -327,12 +327,13 @@ TreeNode:hover {
    COMMAND OVERLAY MODAL
    =================================================================== */
 
-#command_overlay_container {
+CommandOverlay {
     align: center middle;
-    width: 85%;
-    height: 85%;
-    max-width: 120;
-    max-height: 40;
+}
+
+#command_overlay_container {
+    width: 90%;
+    height: 90%;
     background: $surface;
     border: thick $accent;
     layout: vertical;
