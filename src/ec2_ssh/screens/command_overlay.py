@@ -4,11 +4,12 @@ from __future__ import annotations
 import shlex
 import subprocess
 import logging
-from typing import List
+import threading
+from typing import List, Optional
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Vertical
+from textual.containers import Container
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
@@ -27,7 +28,7 @@ class CommandOverlay(ModalScreen):
 
     BINDINGS = [
         Binding("escape", "close_overlay", "Close", show=True),
-        Binding("ctrl+c", "close_overlay", "Close", show=False),
+        Binding("ctrl+c", "stop_or_close", "Stop", show=False),
         Binding("up", "history_prev", "Previous", show=False),
         Binding("down", "history_next", "Next", show=False),
     ]
@@ -42,6 +43,7 @@ class CommandOverlay(ModalScreen):
         self._instance = instance
         self._history: List[str] = []
         self._history_index = -1
+        self._running_process: Optional[subprocess.Popen] = None
 
         # Resolve connection details
         self._profile = None
@@ -64,7 +66,7 @@ class CommandOverlay(ModalScreen):
 
     def on_mount(self) -> None:
         """Initialize connection details and focus input on mount."""
-        # Resolve connection details
+        # Resolve connection details — check for missing profiles
         self._profile = self.app.connection_service.resolve_profile(self._instance)
         self._host = self.app.connection_service.get_target_host(
             self._instance,
@@ -74,6 +76,9 @@ class CommandOverlay(ModalScreen):
             self._proxy_args = self.app.connection_service.get_proxy_args(
                 self._profile
             )
+
+        # Warn if a connection rule matched but the profile is missing
+        self._missing_profile = self._detect_missing_profile()
 
         config = self.app.config_manager.get()
         self._username = config.default_username
@@ -87,12 +92,38 @@ class CommandOverlay(ModalScreen):
         output.append_output(
             f"[dim]Connected to {self._instance.get('name') or self._instance.get('id')}[/dim]"
         )
+        if self._missing_profile:
+            output.append_error(
+                f"[bold yellow]Warning:[/bold yellow] Connection profile "
+                f"'{self._missing_profile}' not found. Connecting directly "
+                f"(no bastion). Add the profile in Settings if this server "
+                f"requires a jump host."
+            )
         output.append_output(
-            f"[dim]Type commands below. Press Escape or Ctrl+C to close.[/dim]\n"
+            f"[dim]Type commands below. Ctrl+C stops a running command, Escape closes.[/dim]\n"
         )
 
         # Focus input
         self.query_one("#command_input", Input).focus()
+
+    def _detect_missing_profile(self) -> Optional[str]:
+        """Check if a connection rule matched but its profile is missing.
+
+        Returns:
+            The missing profile name, or None if no issue.
+        """
+        config = self.app.config_manager.get()
+        from ec2_ssh.utils.match_utils import matches_conditions
+        for rule in config.connection_rules:
+            if matches_conditions(self._instance, rule.match_conditions):
+                profile_exists = any(
+                    p.name == rule.profile_name
+                    for p in config.connection_profiles
+                )
+                if not profile_exists:
+                    return rule.profile_name
+                return None
+        return None
 
     def _build_header_text(self) -> str:
         """Build header text with server name and prompt.
@@ -127,6 +158,30 @@ class CommandOverlay(ModalScreen):
         # Execute command
         self._execute_command(command)
 
+    # Commands that require a real terminal (TUI/ncurses/interactive)
+    INTERACTIVE_COMMANDS = {
+        'top', 'htop', 'vim', 'vi', 'nvim', 'nano', 'less', 'more',
+        'man', 'watch', 'tmux', 'screen', 'mc', 'nmon', 'iftop',
+        'nethogs', 'cfdisk', 'ncdu', 'ranger', 'mutt', 'lynx',
+    }
+    INTERACTIVE_SUBCOMMANDS = {
+        'pm2 monit', 'pm2 dash',
+        'docker exec -it', 'docker run -it',
+    }
+
+    def _is_interactive_command(self, command: str) -> bool:
+        """Check if command requires an interactive terminal."""
+        parts = command.split()
+        if not parts:
+            return False
+        if parts[0] in self.INTERACTIVE_COMMANDS:
+            return True
+        # Check two-word and three-word patterns
+        for pattern in self.INTERACTIVE_SUBCOMMANDS:
+            if command.startswith(pattern):
+                return True
+        return False
+
     def _execute_command(self, command: str) -> None:
         """Execute a command on the remote server via SSH.
 
@@ -139,8 +194,22 @@ class CommandOverlay(ModalScreen):
         prompt = f"{self._username}@{self._instance.get('name', 'server')}:~"
         output_widget.append_command(f"{prompt}$ {command}")
 
-        # Wrap in login shell so PATH includes nvm/rbenv/etc.
-        login_command = f'bash -l -c {shlex.quote(command)}'
+        # Block interactive/TUI commands that need a real terminal
+        if self._is_interactive_command(command):
+            output_widget.append_error(
+                f"[bold yellow]{command.split()[0]}[/bold yellow] requires an "
+                f"interactive terminal and cannot run here."
+            )
+            output_widget.append_output(
+                "[dim]Press Escape to close, then press s to open an SSH terminal.[/dim]\n"
+            )
+            return
+
+        output_widget.append_output("[dim]Ctrl+C to stop[/dim]")
+
+        # Use bash -ic (interactive) so .bashrc is fully sourced, including
+        # nvm/rbenv/pyenv init blocks guarded by the non-interactive check.
+        login_command = f'bash -ic {shlex.quote(command)}'
 
         # Build SSH command
         ssh_cmd = self.app.ssh_service.build_ssh_command(
@@ -151,75 +220,107 @@ class CommandOverlay(ModalScreen):
             proxy_args=self._proxy_args
         )
 
-        logger.debug("Executing SSH command: %s", ' '.join(ssh_cmd))
+        logger.debug("Command overlay executing: %s", ' '.join(ssh_cmd))
 
-        # Run in worker to avoid blocking UI
+        # Run in threaded worker so subprocess I/O doesn't block the event loop
         self.run_worker(
-            self._run_ssh_command(ssh_cmd, output_widget),
+            lambda: self._run_ssh_command(ssh_cmd, output_widget),
             name=f"exec_{len(self._history)}",
-            exclusive=False
+            thread=True,
+            exclusive=False,
+            exit_on_error=False,
         )
 
-    async def _run_ssh_command(
+    def _run_ssh_command(
         self,
         ssh_cmd: List[str],
         output_widget: CommandOutput
     ) -> None:
-        """Run SSH command in subprocess and display output.
+        """Run SSH command in a thread with streaming output.
+
+        Uses subprocess.Popen for reliable piped I/O and call_from_thread()
+        to safely update the UI from the worker thread.
 
         Args:
             ssh_cmd: SSH command list from build_ssh_command.
             output_widget: CommandOutput widget to write results to.
         """
         try:
-            result = subprocess.run(
-                ssh_cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                stdin=subprocess.DEVNULL
+            self.app.call_from_thread(
+                output_widget.append_output, "[dim]Connecting...[/dim]"
             )
+            process = subprocess.Popen(
+                ssh_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+            )
+            self._running_process = process
 
-            # Display output
-            if result.stdout:
-                output_widget.append_output(result.stdout)
+            def _read_stderr() -> None:
+                for raw_line in iter(process.stderr.readline, b''):
+                    line = raw_line.decode("utf-8", errors="replace").rstrip("\n")
+                    if not line:
+                        continue
+                    # Filter bash -i job control noise
+                    if "no job control" in line or "terminal process group" in line:
+                        continue
+                    self.app.call_from_thread(output_widget.append_error, line)
 
-            # Display errors
-            if result.stderr:
-                output_widget.append_error(result.stderr)
+            stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+            stderr_thread.start()
 
-            # Show return code if non-zero
-            if result.returncode != 0:
-                output_widget.append_error(
-                    f"[dim]Command exited with code {result.returncode}[/dim]"
+            # Read stdout line-by-line in this thread
+            for raw_line in iter(process.stdout.readline, b''):
+                line = raw_line.decode("utf-8", errors="replace").rstrip("\n")
+                self.app.call_from_thread(output_widget.append_output, line)
+
+            stderr_thread.join(timeout=5)
+            return_code = process.wait()
+
+            if return_code != 0 and return_code not in (-15, -9):
+                self.app.call_from_thread(
+                    output_widget.append_error,
+                    f"[dim]Command exited with code {return_code}[/dim]",
                 )
-
-        except subprocess.TimeoutExpired:
-            output_widget.append_error("❌ Command timed out (30s limit)")
-            logger.warning("SSH command timed out")
-            self.app.notify("Command timed out after 30 seconds", severity="error")
 
         except Exception as e:
             error_str = str(e)
             if "Connection refused" in error_str:
-                output_widget.append_error("❌ Connection refused. Check if instance is accessible.")
-                self.app.notify("SSH connection refused", severity="error")
+                self.app.call_from_thread(output_widget.append_error, "Connection refused. Check if instance is accessible.")
             elif "timed out" in error_str.lower():
-                output_widget.append_error("❌ Connection timed out. Check network and security groups.")
-                self.app.notify("SSH connection timed out", severity="error")
+                self.app.call_from_thread(output_widget.append_error, "Connection timed out. Check network and security groups.")
             elif "permission denied" in error_str.lower():
-                output_widget.append_error("❌ Permission denied. Check SSH key and username.")
-                self.app.notify("SSH authentication failed", severity="error")
+                self.app.call_from_thread(output_widget.append_error, "Permission denied. Check SSH key and username.")
             else:
-                output_widget.append_error(f"❌ Error: {error_str}")
-                self.app.notify(f"SSH error: {error_str}", severity="error")
-            logger.error("SSH command failed: %s", e)
+                self.app.call_from_thread(output_widget.append_error, f"Error: {error_str}")
+            logger.error("SSH command failed: %s", e, exc_info=True)
 
-        # Add separator
-        output_widget.append_output("")
+        finally:
+            self._running_process = None
+            try:
+                self.app.call_from_thread(output_widget.append_output, "")
+            except Exception:
+                logger.warning("Could not write final separator (overlay may be closed)")
+
+    def _stop_running_process(self) -> None:
+        """Terminate the currently running subprocess, if any."""
+        if self._running_process and self._running_process.returncode is None:
+            self._running_process.terminate()
+            output_widget = self.query_one("#command_output", CommandOutput)
+            output_widget.append_output("[dim]Stopped.[/dim]")
+
+    def action_stop_or_close(self) -> None:
+        """Stop running command if active, otherwise close the overlay."""
+        if self._running_process and self._running_process.returncode is None:
+            self._stop_running_process()
+        else:
+            self.action_close_overlay()
 
     def action_close_overlay(self) -> None:
-        """Close the command overlay modal."""
+        """Close the command overlay modal, terminating any running process."""
+        if self._running_process and self._running_process.returncode is None:
+            self._running_process.terminate()
         self.app.pop_screen()
 
     def action_history_prev(self) -> None:
