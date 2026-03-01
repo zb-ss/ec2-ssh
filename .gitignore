@@ -48,3 +48,4 @@ coverage.xml
 
 # Projectile marker file
 .projectile
+/local/

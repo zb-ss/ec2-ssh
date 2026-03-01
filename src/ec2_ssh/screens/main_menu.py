@@ -8,6 +8,8 @@ from textual.containers import Container, Vertical
 from textual.screen import Screen
 from textual.widgets import Static, Button, Header, Footer
 
+from ec2_ssh.widgets.progress_indicator import ProgressIndicator
+
 
 class MainMenuScreen(Screen):
     """Main menu screen with option selection."""
@@ -75,6 +77,7 @@ class MainMenuScreen(Screen):
                 Button("5. Quit", id="btn_quit", variant="error"),
                 id="menu_buttons"
             ),
+            ProgressIndicator(),
             id="menu_container"
         )
         yield Footer()
@@ -110,23 +113,33 @@ class MainMenuScreen(Screen):
 
     def action_option_3(self) -> None:
         """Scan Servers — scan all running instances."""
-        self.notify("Starting server scan...")
+        progress = self.query_one(ProgressIndicator)
+        progress.start("Preparing scan...")
+        self.query_one("#btn_scan", Button).disabled = True
         self.run_worker(self._scan_all_servers(), name="scan_all", exclusive=True)
 
     async def _scan_all_servers(self) -> None:
         """Worker function to scan all running instances."""
+        progress = self.query_one(ProgressIndicator)
+
         instances = self.app.instances
         if not instances:
-            self.app.notify("Loading instances...")
+            progress.start("Loading instances from AWS...")
             instances = await self.app.aws_service.fetch_instances_cached()
             self.app.instances = instances
+
         running = [i for i in instances if i.get('state') == 'running']
         if not running:
+            progress.stop()
+            self.query_one("#btn_scan", Button).disabled = False
             self.app.notify("No running instances to scan", severity="warning")
             return
 
+        total = len(running)
         scanned = 0
-        for instance in running:
+        for idx, instance in enumerate(running, 1):
+            name = instance.get('name') or instance.get('id', 'unknown')
+            progress.start(f"Scanning {idx}/{total}: {name}...")
             try:
                 results = await self.app.scan_service.scan_server(
                     instance, self.app.ssh_service, self.app.connection_service
@@ -135,10 +148,11 @@ class MainMenuScreen(Screen):
                     self.app.keyword_store.save_results(instance['id'], results)
                     scanned += 1
             except Exception as e:
-                self.app.notify(f"Scan failed for {instance.get('name', instance['id'])}: {e}",
-                               severity="error")
+                self.app.notify(f"Scan failed for {name}: {e}", severity="error")
 
-        self.app.notify(f"Scan complete. {scanned}/{len(running)} servers scanned.")
+        progress.stop()
+        self.query_one("#btn_scan", Button).disabled = False
+        self.app.notify(f"Scan complete. {scanned}/{total} servers scanned.")
 
     def action_option_4(self) -> None:
         """Navigate to Settings."""
