@@ -14,17 +14,15 @@ class MainMenuScreen(Screen):
 
     BINDINGS = [
         Binding("1", "option_1", "List Instances", show=True),
-        Binding("2", "option_2", "Search", show=True),
-        Binding("3", "option_3", "SSH Keys", show=True),
-        Binding("4", "option_4", "Scan Servers", show=True),
-        Binding("5", "option_5", "Settings", show=True),
-        Binding("6", "quit", "Quit", show=True),
+        Binding("2", "option_2", "SSH Keys", show=True),
+        Binding("3", "option_3", "Scan Servers", show=True),
+        Binding("4", "option_4", "Settings", show=True),
+        Binding("5", "quit", "Quit", show=True),
         Binding("question_mark", "show_help", "Help", show=True),
         Binding("l", "option_1", "List", show=False),
-        Binding("s", "option_2", "Search", show=False),
-        Binding("k", "option_3", "Keys", show=False),
-        Binding("c", "option_4", "Scan", show=False),
-        Binding("t", "option_5", "Settings", show=False),
+        Binding("k", "option_2", "Keys", show=False),
+        Binding("c", "option_3", "Scan", show=False),
+        Binding("t", "option_4", "Settings", show=False),
         Binding("q", "quit", "Quit", show=False),
         Binding("h", "show_help", "Help", show=False),
     ]
@@ -68,15 +66,13 @@ class MainMenuScreen(Screen):
             Vertical(
                 Button("1. List Instances", id="btn_list", variant="primary"),
                 Static("[dim]  View and connect to your EC2 instances across all regions[/dim]", classes="help_text"),
-                Button("2. Search", id="btn_search"),
-                Static("[dim]  Search instances and keyword scan results[/dim]", classes="help_text"),
-                Button("3. Manage SSH Keys", id="btn_keys"),
+                Button("2. Manage SSH Keys", id="btn_keys"),
                 Static("[dim]  Configure SSH keys, auto-discovery, and agent settings[/dim]", classes="help_text"),
-                Button("4. Scan Servers", id="btn_scan"),
+                Button("3. Scan Servers", id="btn_scan"),
                 Static("[dim]  Scan running instances for configured paths and commands[/dim]", classes="help_text"),
-                Button("5. Settings", id="btn_settings"),
+                Button("4. Settings", id="btn_settings"),
                 Static("[dim]  Configure scan paths, profiles, and application settings[/dim]", classes="help_text"),
-                Button("6. Quit", id="btn_quit", variant="error"),
+                Button("5. Quit", id="btn_quit", variant="error"),
                 id="menu_buttons"
             ),
             id="menu_container"
@@ -93,14 +89,12 @@ class MainMenuScreen(Screen):
 
         if button_id == "btn_list":
             self.action_option_1()
-        elif button_id == "btn_search":
-            self.action_option_2()
         elif button_id == "btn_keys":
-            self.action_option_3()
+            self.action_option_2()
         elif button_id == "btn_scan":
-            self.action_option_4()
+            self.action_option_3()
         elif button_id == "btn_settings":
-            self.action_option_5()
+            self.action_option_4()
         elif button_id == "btn_quit":
             self.action_quit()
 
@@ -110,16 +104,11 @@ class MainMenuScreen(Screen):
         self.app.push_screen(InstanceListScreen())
 
     def action_option_2(self) -> None:
-        """Navigate to Search screen."""
-        from ec2_ssh.screens.search import SearchScreen
-        self.app.push_screen(SearchScreen())
-
-    def action_option_3(self) -> None:
         """Navigate to SSH Keys management."""
         from ec2_ssh.screens.key_management import KeyManagementScreen
         self.app.push_screen(KeyManagementScreen())
 
-    def action_option_4(self) -> None:
+    def action_option_3(self) -> None:
         """Scan Servers — scan all running instances."""
         self.notify("Starting server scan...")
         self.run_worker(self._scan_all_servers(), name="scan_all", exclusive=True)
@@ -127,6 +116,10 @@ class MainMenuScreen(Screen):
     async def _scan_all_servers(self) -> None:
         """Worker function to scan all running instances."""
         instances = self.app.instances
+        if not instances:
+            self.app.notify("Loading instances...")
+            instances = await self.app.aws_service.fetch_instances_cached()
+            self.app.instances = instances
         running = [i for i in instances if i.get('state') == 'running']
         if not running:
             self.app.notify("No running instances to scan", severity="warning")
@@ -147,7 +140,7 @@ class MainMenuScreen(Screen):
 
         self.app.notify(f"Scan complete. {scanned}/{len(running)} servers scanned.")
 
-    def action_option_5(self) -> None:
+    def action_option_4(self) -> None:
         """Navigate to Settings."""
         from ec2_ssh.screens.settings import SettingsScreen
         self.app.push_screen(SettingsScreen())

@@ -183,12 +183,11 @@ MainMenuScreen {
 #search_input {
     margin: 1 1 0 1;
     width: 1fr;
-    dock: top;
 }
 
 InstanceTable {
     height: 1fr;
-    margin: 1;
+    margin: 0 1;
     border: solid $primary;
 }
 
@@ -213,33 +212,17 @@ ProgressIndicator.--visible {
     display: block;
 }
 
-/* ===================================================================
-   SEARCH SCREEN
-   =================================================================== */
-
-#search_container {
-    layout: vertical;
-    height: 100%;
-    padding: 1;
-}
-
-#results_container {
-    height: 1fr;
-    layout: vertical;
-}
-
-#instance_matches_label,
 #keyword_matches_label {
-    padding: 1;
+    padding: 0 1;
     color: $accent;
     text-style: bold;
 }
 
-#instance_matches_container,
 #keyword_matches_container {
-    height: 1fr;
+    height: auto;
+    max-height: 30%;
     border: solid $primary;
-    margin: 0 0 1 0;
+    margin: 0 1;
     background: $boost;
 }
 
