@@ -23,14 +23,14 @@ When SSH fails, the terminal window **stays open** showing the error and exit co
 Check the log for the exact SSH command:
 
 ```bash
-grep "SSH command" ~/.ec2_ssh_logs/ec2_ssh.log
+grep "SSH command" ~/.ec2-ssh/logs/ec2_ssh.log
 ```
 
 ## Bastion Connection Hangs
 
 If the terminal opens but SSH hangs:
 
-1. **No connection profile** — Check that `connection_profiles` and `connection_rules` are set in `~/.ec2_ssh_config.json`
+1. **No connection profile** — Check that `connection_profiles` and `connection_rules` are set in `~/.ec2-ssh/config.json`
 2. **Wrong bastion host** — Verify reachability: `ssh -i key.pem user@bastion-host`
 3. **Wrong bastion key** — If the bastion uses a different key, set `bastion_key` in the profile
 4. **Private IP unreachable** — The bastion must be able to reach the target's private IP
@@ -91,7 +91,7 @@ The file browser connects via SSH to list directory contents. If it fails:
 
 ## Logging
 
-Logs are always written to `~/.ec2_ssh_logs/ec2_ssh.log` and include:
+Logs are always written to `~/.ec2-ssh/logs/ec2_ssh.log` and include:
 
 - SSH commands executed
 - Terminal emulator detection

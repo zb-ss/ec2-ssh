@@ -237,7 +237,7 @@ function Write-FinalMessage {
     Write-Host "  https://github.com/zb-ss/ec2-ssh"
     Write-Host ""
     Write-Host "Configuration:" -ForegroundColor White
-    Write-Host "  Config: $env:USERPROFILE\.ec2_ssh_config.json"
+    Write-Host "  Config: $env:USERPROFILE\.ec2-ssh\config.json"
     Write-Host ""
 }
 

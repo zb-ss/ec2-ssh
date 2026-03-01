@@ -41,14 +41,14 @@ HELP_TEXT = """
 | Action | What it does |
 |--------|-------------|
 | **Browse Files** | Interactive remote filesystem tree via SSH |
-| **Run Command** | Execute commands on the server (overlay panel, `Up`/`Down` for history) |
+| **Run Command** | Execute commands on the server (overlay panel, `Up`/`Down` for history, `Ctrl+R` picker, `Ctrl+S` save) |
 | **SSH Connect** | Opens a **new terminal window** with SSH session |
 | **SCP Transfer** | Upload/download files via SCP |
 | **View Scan Results** | Show keyword scan data for this server |
 
 ## Instance Caching
 
-Instances are cached to `~/.ec2_ssh_cache.json` for fast startup.
+Instances are cached to `~/.ec2-ssh/cache.json` for fast startup.
 
 | Scenario | Behavior |
 |----------|----------|
@@ -62,7 +62,7 @@ Background refresh shows a notification when complete (e.g., "2 more instances f
 
 ## Connection Profiles (Bastion Support)
 
-For instances behind a bastion host, add to `~/.ec2_ssh_config.json`:
+For instances behind a bastion host, add to `~/.ec2-ssh/config.json`:
 
 ```json
 {
@@ -99,7 +99,7 @@ You can also set keys per-instance or set a default key in Settings.
 
 ## Configuration Reference
 
-Config file: `~/.ec2_ssh_config.json`
+Config file: `~/.ec2-ssh/config.json`
 
 | Field | Default | Description |
 |-------|---------|-------------|
@@ -112,10 +112,20 @@ Config file: `~/.ec2_ssh_config.json`
 
 ## Logging & Debugging
 
-Logs: `~/.ec2_ssh_logs/ec2_ssh.log`
+Logs: `~/.ec2-ssh/logs/ec2_ssh.log`
 Debug mode: `ec2-ssh --debug`
 
 SSH failures keep the terminal window **open** so you can read the error message.
+
+## Command Overlay Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Up` / `Down` | Navigate command history |
+| `Ctrl+R` | Open command picker (saved + recent) |
+| `Ctrl+S` | Save current command to favorites |
+| `Ctrl+C` | Stop running command |
+| `Escape` | Close overlay |
 
 ## Global Shortcuts
 

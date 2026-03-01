@@ -61,17 +61,17 @@ class SettingsScreen(Screen):
 
             # Section 3: Scan Rules (read-only)
             Static("[bold]Scan Rules[/bold]", classes="section_header"),
-            Static("[dim]Edit scan rules in ~/.ec2_ssh_config.json[/dim]", classes="note"),
+            Static("[dim]Edit scan rules in ~/.ec2-ssh/config.json[/dim]", classes="note"),
             DataTable(id="scan_rules_table"),
 
             # Section 4: Connection Profiles (read-only)
             Static("[bold]Connection Profiles[/bold]", classes="section_header"),
-            Static("[dim]Edit connection profiles in ~/.ec2_ssh_config.json[/dim]", classes="note"),
+            Static("[dim]Edit connection profiles in ~/.ec2-ssh/config.json[/dim]", classes="note"),
             DataTable(id="profiles_table"),
 
             # Section 5: Connection Rules (read-only)
             Static("[bold]Connection Rules[/bold]", classes="section_header"),
-            Static("[dim]Edit connection rules in ~/.ec2_ssh_config.json[/dim]", classes="note"),
+            Static("[dim]Edit connection rules in ~/.ec2-ssh/config.json[/dim]", classes="note"),
             DataTable(id="rules_table"),
 
             id="settings_container"

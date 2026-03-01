@@ -19,7 +19,60 @@ from .migration import migrate_v1_to_v2, create_backup
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = Path.home() / '.ec2_ssh_config.json'
+CONFIG_DIR = Path.home() / '.ec2-ssh'
+CONFIG_PATH = CONFIG_DIR / 'config.json'
+
+# Legacy paths (pre-consolidation)
+_LEGACY_CONFIG = Path.home() / '.ec2_ssh_config.json'
+_LEGACY_CACHE = Path.home() / '.ec2_ssh_cache.json'
+_LEGACY_KEYWORDS = Path.home() / '.ec2_ssh_keywords.json'
+_LEGACY_LOG_DIR = Path.home() / '.ec2_ssh_logs'
+
+
+def _ensure_config_dir() -> None:
+    """Create ~/.ec2-ssh/ directory if it doesn't exist."""
+    CONFIG_DIR.mkdir(exist_ok=True)
+
+
+def _migrate_legacy_paths() -> None:
+    """Migrate files from old scattered locations to ~/.ec2-ssh/.
+
+    One-time migration: if old ~/.ec2_ssh_config.json exists but
+    new ~/.ec2-ssh/config.json doesn't, move all files over.
+    """
+    if not _LEGACY_CONFIG.exists() or CONFIG_PATH.exists():
+        return
+
+    import shutil
+
+    _ensure_config_dir()
+    logger.info("Migrating legacy config files to %s", CONFIG_DIR)
+
+    # Move config
+    shutil.move(str(_LEGACY_CONFIG), str(CONFIG_PATH))
+    logger.info("Moved %s → %s", _LEGACY_CONFIG, CONFIG_PATH)
+
+    # Move cache
+    if _LEGACY_CACHE.exists():
+        dest = CONFIG_DIR / 'cache.json'
+        shutil.move(str(_LEGACY_CACHE), str(dest))
+        logger.info("Moved %s → %s", _LEGACY_CACHE, dest)
+
+    # Move keywords
+    if _LEGACY_KEYWORDS.exists():
+        dest = CONFIG_DIR / 'keywords.json'
+        shutil.move(str(_LEGACY_KEYWORDS), str(dest))
+        logger.info("Moved %s → %s", _LEGACY_KEYWORDS, dest)
+
+    # Move logs directory contents
+    if _LEGACY_LOG_DIR.exists() and _LEGACY_LOG_DIR.is_dir():
+        new_log_dir = CONFIG_DIR / 'logs'
+        new_log_dir.mkdir(exist_ok=True)
+        for item in _LEGACY_LOG_DIR.iterdir():
+            dest = new_log_dir / item.name
+            shutil.move(str(item), str(dest))
+        _LEGACY_LOG_DIR.rmdir()
+        logger.info("Moved %s → %s", _LEGACY_LOG_DIR, new_log_dir)
 
 
 class ConfigManager:
@@ -37,6 +90,8 @@ class ConfigManager:
     def __init__(self) -> None:
         """Initialize the configuration manager."""
         self._config: Optional[AppConfig] = None
+        _migrate_legacy_paths()
+        _ensure_config_dir()
         self._config_path = CONFIG_PATH
 
     def load(self) -> AppConfig:
@@ -69,6 +124,11 @@ class ConfigManager:
 
             # Deserialize to AppConfig
             self._config = self._deserialize(raw_data)
+
+            # Fix legacy keyword_store_path if still pointing to old location
+            if self._config.keyword_store_path == '~/.ec2_ssh_keywords.json':
+                self._config.keyword_store_path = '~/.ec2-ssh/keywords.json'
+                self.save(self._config)
 
             # Validate and warn
             warnings = self._validate(self._config)

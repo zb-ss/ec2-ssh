@@ -16,7 +16,7 @@ from ec2_ssh.utils.platform_utils import get_os
 logger = logging.getLogger(__name__)
 
 # Directory for wrapper scripts that keep the terminal open on failure
-_WRAPPER_DIR = Path.home() / '.ec2_ssh_logs'
+_WRAPPER_DIR = Path.home() / '.ec2-ssh' / 'logs'
 
 
 class TerminalService(TerminalServiceInterface):

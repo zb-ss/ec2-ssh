@@ -54,7 +54,8 @@ ConfigManager → config
   ├── ScanService(config_manager)
   ├── KeywordStore(config.keyword_store_path)
   ├── TerminalService(preferred=config.terminal_emulator)
-  └── SCPService()
+  ├── SCPService()
+  └── CommandHistoryService(config.command_history_path)
 ```
 
 ### Screen Navigation
@@ -78,13 +79,13 @@ All CSS is in a single `app.css` file using Textual's CSS-like syntax with desig
 - External SSH sessions launch in new terminal window via wrapper script that keeps terminal open on failure
 
 **Instance Caching (stale-while-revalidate):**
-- Cache at `~/.ec2_ssh_cache.json` with configurable TTL (default 3600s)
+- Cache at `~/.ec2-ssh/cache.json` with configurable TTL (default 3600s)
 - Startup: show stale data immediately, refresh in background if expired
 - `CacheService.load()` respects TTL; `load_any()` ignores TTL; `is_fresh()` checks TTL
 - Force refresh via `R` key in instance list
 
 **Configuration:**
-- JSON at `~/.ec2_ssh_config.json`, dataclass-based schema (`AppConfig`, `ScanRule`, `ConnectionProfile`, `ConnectionRule`)
+- JSON at `~/.ec2-ssh/config.json`, dataclass-based schema (`AppConfig`, `ScanRule`, `ConnectionProfile`, `ConnectionRule`)
 - Schema versioning (`CONFIG_VERSION = 2`) with automatic v1→v2 migration
 - Connection rules evaluated in order — first match wins
 
@@ -95,11 +96,14 @@ All CSS is in a single `app.css` file using Textual's CSS-like syntax with desig
 
 ## Runtime Files
 
-- `~/.ec2_ssh_config.json` — Main configuration
-- `~/.ec2_ssh_cache.json` — Cached instance list
-- `~/.ec2_ssh_keywords.json` — Scan results store
-- `~/.ec2_ssh_logs/ec2_ssh.log` — Application log
-- `~/.ec2_ssh_logs/ec2ssh_*.sh` — Temporary SSH wrapper scripts
+All runtime files are under `~/.ec2-ssh/`:
+
+- `~/.ec2-ssh/config.json` — Main configuration
+- `~/.ec2-ssh/cache.json` — Cached instance list
+- `~/.ec2-ssh/keywords.json` — Scan results store
+- `~/.ec2-ssh/command_history.json` — Saved commands and command history
+- `~/.ec2-ssh/logs/ec2_ssh.log` — Application log
+- `~/.ec2-ssh/logs/ec2ssh_*.sh` — Temporary SSH wrapper scripts
 
 ## Dependencies
 

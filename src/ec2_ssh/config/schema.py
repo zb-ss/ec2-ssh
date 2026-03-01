@@ -88,5 +88,7 @@ class AppConfig:
     connection_profiles: List[ConnectionProfile] = field(default_factory=list)
     connection_rules: List[ConnectionRule] = field(default_factory=list)
     terminal_emulator: str = "auto"
-    keyword_store_path: str = "~/.ec2_ssh_keywords.json"
+    keyword_store_path: str = "~/.ec2-ssh/keywords.json"
+    command_history_path: str = "~/.ec2-ssh/command_history.json"
+    max_command_history: int = 50
     theme: str = "dark"

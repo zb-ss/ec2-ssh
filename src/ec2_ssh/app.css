@@ -340,10 +340,16 @@ CommandOverlay {
     overflow-y: auto;
 }
 
+#command_hints {
+    height: 1;
+    padding: 0 2;
+    margin: 0 1;
+    color: $text-muted;
+    background: $boost;
+}
+
 #command_input {
-    dock: bottom;
-    margin: 1;
-    width: 1fr;
+    margin: 0 1 0 1;
 }
 
 RichLog {
@@ -631,6 +637,73 @@ RadioButton:focus {
 #results_table {
     height: 1fr;
     margin-top: 1;
+}
+
+/* ===================================================================
+   COMMAND PICKER MODAL
+   =================================================================== */
+
+CommandPickerModal {
+    align: center middle;
+}
+
+#picker_container {
+    width: 70%;
+    max-width: 80;
+    height: 60%;
+    background: $surface;
+    border: thick $accent;
+    layout: vertical;
+}
+
+#picker_header {
+    dock: top;
+    padding: 1 2;
+    background: $primary;
+    color: $text;
+    border-bottom: thick $accent;
+    text-style: bold;
+}
+
+#picker_search {
+    margin: 1 1 0 1;
+    width: 1fr;
+}
+
+#picker_list {
+    height: 1fr;
+    background: $panel;
+    margin: 0 1 1 1;
+    border: solid $primary-background;
+}
+
+/* Save Command Modal */
+
+SaveCommandModal {
+    align: center middle;
+}
+
+#save_container {
+    width: 60%;
+    max-width: 60;
+    height: auto;
+    background: $surface;
+    border: thick $accent;
+    padding: 1 2;
+}
+
+#save_header {
+    padding: 1;
+    text-style: bold;
+}
+
+#save_command_preview {
+    padding: 0 1 1 1;
+}
+
+#save_name_input {
+    margin: 0 1 1 1;
+    width: 1fr;
 }
 
 /* ===================================================================

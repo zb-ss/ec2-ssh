@@ -35,14 +35,14 @@ pipx install .
 - **Interactive TUI** with mouse and keyboard support powered by [Textual](https://textual.textualize.io/)
 - **List and search** EC2 instances across all AWS regions
 - **SSH into instances** — launches in new terminal window with auto-detected emulator
-- **Run remote commands** via overlay panel with real-time streaming output
+- **Run remote commands** via overlay panel with real-time streaming output, persistent history, and saved command favorites
 - **Browse remote file systems** — interactive file tree navigation
 - **SCP file transfer** — upload/download files and directories
 - **Keyword-based server scanning** — search file contents across instances
 - **Bastion host / jump server support** via ProxyJump or ProxyCommand
 - **SSH key management** with auto-discovery and per-instance configuration
 - **Instance caching** with stale-while-revalidate for fast startup
-- **Fully configurable** — all settings in `~/.ec2_ssh_config.json`
+- **Fully configurable** — all settings in `~/.ec2-ssh/config.json`
 
 ## Prerequisites
 
@@ -74,6 +74,8 @@ ec2-ssh --debug   # Launch with debug logging to stderr
 | Instance List | `C` | Run command overlay |
 | Instance List | `T` | SCP transfer |
 | Command Overlay | `Ctrl+C` | Stop running command |
+| Command Overlay | `Ctrl+R` | Command picker (saved + recent) |
+| Command Overlay | `Ctrl+S` | Save command to favorites |
 | Command Overlay | `Up/Down` | Command history |
 
 ### What You Can Do
@@ -84,7 +86,7 @@ ec2-ssh --debug   # Launch with debug logging to stderr
 4. **Scan Servers** — Run keyword scans across running instances
 5. **Settings** — Configure connection profiles, scan rules, preferences
 
-When you select a server: browse files, run commands, SSH connect, SCP transfer, or view scan results.
+When you select a server: browse files, run commands, SSH connect, SCP transfer, or view scan results. Command history persists across sessions — use `Ctrl+R` to search history and saved commands, `Ctrl+S` to save favorites.
 
 ### Instance Caching
 
@@ -97,7 +99,7 @@ When you select a server: browse files, run commands, SSH connect, SCP transfer,
 
 ### Configuration
 
-All configuration lives in `~/.ec2_ssh_config.json`, created automatically on first run.
+All configuration lives in `~/.ec2-ssh/config.json`, created automatically on first run.
 
 See [Configuration Guide](docs/configuration.md) for the full reference including connection profiles, scan rules, and match conditions.
 
@@ -131,7 +133,7 @@ See [Troubleshooting Guide](docs/troubleshooting.md) for help with SSH connectio
 
 ## Logging
 
-Logs are always written to `~/.ec2_ssh_logs/ec2_ssh.log`. Use `--debug` for verbose stderr output.
+Logs are always written to `~/.ec2-ssh/logs/ec2_ssh.log`. Use `--debug` for verbose stderr output.
 
 When SSH fails, the terminal window stays open showing the error and exit code.
 
