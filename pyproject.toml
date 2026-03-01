@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ec2-tui"
-version = "2.0.0"
+version = "2.1.0"
 description = "Interactive TUI for managing AWS EC2 SSH connections"
 readme = "README.md"
 license = "MIT"
