@@ -19,7 +19,7 @@ src/ec2_ssh/
 ### config/
 
 - **`schema.py`** — Dataclass definitions: `AppConfig`, `ScanRule`, `ConnectionProfile`, `ConnectionRule`. Schema version constant (`CONFIG_VERSION = 2`).
-- **`manager.py`** — `ConfigManager` handles JSON load/save/validate at `~/.ec2_ssh_config.json`.
+- **`manager.py`** — `ConfigManager` handles JSON load/save/validate at `~/.ec2-ssh/config.json`.
 - **`migration.py`** — Automatic v1 → v2 migration (flat bastion settings → nested profiles/rules).
 
 ### services/

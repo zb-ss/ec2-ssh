@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class CacheService:
     """File-based cache with TTL for EC2 instance lists."""
 
-    CACHE_PATH = Path.home() / '.ec2_ssh_cache.json'
+    CACHE_PATH = Path.home() / '.ec2-ssh' / 'cache.json'
 
     def __init__(self, ttl_seconds: int = 300):
         """Initialize cache service.

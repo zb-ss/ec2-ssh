@@ -16,7 +16,7 @@ def _setup_logging(debug: bool = False) -> Path:
     Returns:
         Path to the log file.
     """
-    log_dir = Path.home() / '.ec2_ssh_logs'
+    log_dir = Path.home() / '.ec2-ssh' / 'logs'
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / 'ec2_ssh.log'
 
@@ -50,7 +50,7 @@ def main() -> None:
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug logging (also prints to stderr)')
     parser.add_argument('--config', type=str, default=None,
-                        help='Path to config file (default: ~/.ec2_ssh_config.json)')
+                        help='Path to config file (default: ~/.ec2-ssh/config.json)')
     args = parser.parse_args()
 
     log_file = _setup_logging(debug=args.debug)

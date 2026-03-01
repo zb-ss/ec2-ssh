@@ -27,6 +27,7 @@ class EC2ConnectApp(App):
     keyword_store = None
     terminal_service = None
     scp_service = None
+    command_history = None
 
     # Shared state
     instances: List[dict] = []  # all fetched instances
@@ -53,6 +54,7 @@ class EC2ConnectApp(App):
         from ec2_ssh.services.keyword_store import KeywordStore
         from ec2_ssh.services.terminal_service import TerminalService
         from ec2_ssh.services.scp_service import SCPService
+        from ec2_ssh.services.command_history import CommandHistoryService
 
         self.config_manager = ConfigManager()
         config = self.config_manager.get()
@@ -64,6 +66,7 @@ class EC2ConnectApp(App):
         self.keyword_store = KeywordStore(config.keyword_store_path)
         self.terminal_service = TerminalService(preferred=config.terminal_emulator)
         self.scp_service = SCPService()
+        self.command_history = CommandHistoryService(config.command_history_path)
 
     def action_show_help(self) -> None:
         """Show help screen from any context."""

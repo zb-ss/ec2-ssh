@@ -41,7 +41,7 @@ def migrate_v1_to_v2(v1_data: Dict[str, Any]) -> Dict[str, Any]:
             "connection_profiles": [],
             "connection_rules": [],
             "terminal_emulator": "auto",
-            "keyword_store_path": "~/.ec2_ssh_keywords.json",
+            "keyword_store_path": "~/.ec2-ssh/keywords.json",
             "theme": "dark"
         }
     """
@@ -61,7 +61,7 @@ def migrate_v1_to_v2(v1_data: Dict[str, Any]) -> Dict[str, Any]:
         'connection_profiles': [],
         'connection_rules': [],
         'terminal_emulator': 'auto',
-        'keyword_store_path': '~/.ec2_ssh_keywords.json',
+        'keyword_store_path': '~/.ec2-ssh/keywords.json',
         'theme': 'dark',
     })
 

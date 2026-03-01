@@ -302,7 +302,7 @@ setup_wizard() {
 
 # Create starter config file
 create_starter_config() {
-    CONFIG_FILE="$HOME/.ec2_ssh_config.json"
+    CONFIG_FILE="$HOME/.ec2-ssh/config.json"
 
     if [ -f "$CONFIG_FILE" ]; then
         print_warning "Configuration file already exists at: $CONFIG_FILE"
@@ -318,6 +318,7 @@ create_starter_config() {
 
     print_info "Creating starter configuration at: $CONFIG_FILE"
 
+    mkdir -p "$(dirname "$CONFIG_FILE")"
     cat > "$CONFIG_FILE" << 'EOF'
 {
   "version": 2,
@@ -330,7 +331,7 @@ create_starter_config() {
   "connection_profiles": [],
   "connection_rules": [],
   "terminal_emulator": "auto",
-  "keyword_store_path": "~/.ec2_ssh_keywords.json",
+  "keyword_store_path": "~/.ec2-ssh/keywords.json",
   "theme": "dark"
 }
 EOF
@@ -371,8 +372,8 @@ print_final_message() {
     echo "  https://github.com/zb-ss/ec2-ssh"
     echo ""
     echo "${BOLD}Configuration:${RESET}"
-    echo "  Config file: ~/.ec2_ssh_config.json"
-    echo "  Cache file:  ~/.ec2_ssh_cache.json"
+    echo "  Config dir:  ~/.ec2-ssh/"
+    echo "  Config file: ~/.ec2-ssh/config.json"
     echo ""
 }
 

@@ -29,6 +29,8 @@ class CommandOverlay(ModalScreen):
     BINDINGS = [
         Binding("escape", "close_overlay", "Close", show=True),
         Binding("ctrl+c", "stop_or_close", "Stop", show=False),
+        Binding("ctrl+r", "show_command_picker", "Picker", show=True),
+        Binding("ctrl+s", "save_command", "Save Cmd", show=True),
         Binding("up", "history_prev", "Previous", show=False),
         Binding("down", "history_next", "Next", show=False),
     ]
@@ -57,6 +59,14 @@ class CommandOverlay(ModalScreen):
         yield Container(
             Static(self._build_header_text(), id="command_header"),
             CommandOutput(id="command_output"),
+            Static(
+                "[dim]Ctrl+R[/dim] Picker  "
+                "[dim]Ctrl+S[/dim] Save  "
+                "[dim]↑↓[/dim] History  "
+                "[dim]Ctrl+C[/dim] Stop  "
+                "[dim]Esc[/dim] Close",
+                id="command_hints",
+            ),
             Input(
                 placeholder="Enter command to execute...",
                 id="command_input"
@@ -86,6 +96,13 @@ class CommandOverlay(ModalScreen):
 
         if not self._key_path and self._instance.get('key_name'):
             self._key_path = self.app.ssh_service.discover_key(self._instance['key_name'])
+
+        # Load persisted history for this instance
+        if self.app.command_history:
+            self._history = list(
+                self.app.command_history.get_instance_history(self._instance['id'])
+            )
+            self._history_index = len(self._history)
 
         # Show welcome message
         output = self.query_one("#command_output", CommandOutput)
@@ -151,9 +168,13 @@ class CommandOverlay(ModalScreen):
         event.input.value = ""
 
         # Add to history
-        if command not in self._history or self._history[-1] != command:
+        if not self._history or self._history[-1] != command:
             self._history.append(command)
         self._history_index = len(self._history)
+
+        # Persist to disk
+        if self.app.command_history:
+            self.app.command_history.add_to_history(self._instance['id'], command)
 
         # Execute command
         self._execute_command(command)
@@ -349,3 +370,48 @@ class CommandOverlay(ModalScreen):
             self._history_index = len(self._history)
             command_input = self.query_one("#command_input", Input)
             command_input.value = ""
+
+    def action_show_command_picker(self) -> None:
+        """Show the command picker modal (Ctrl+R)."""
+        if not self.app.command_history:
+            return
+
+        from ec2_ssh.screens.command_picker import CommandPickerModal
+
+        saved = self.app.command_history.get_saved_commands()
+        # Show global history in reverse (newest first)
+        recent = list(reversed(self.app.command_history.get_global_history()))
+
+        def _on_pick(command: str | None) -> None:
+            if command:
+                cmd_input = self.query_one("#command_input", Input)
+                cmd_input.value = command
+                cmd_input.cursor_position = len(command)
+                cmd_input.focus()
+
+        self.app.push_screen(
+            CommandPickerModal(saved_commands=saved, recent_commands=recent),
+            callback=_on_pick,
+        )
+
+    def action_save_command(self) -> None:
+        """Save the current input as a named command (Ctrl+S)."""
+        if not self.app.command_history:
+            return
+
+        command_input = self.query_one("#command_input", Input)
+        command = command_input.value.strip()
+
+        if not command:
+            self.notify("Enter a command first", severity="warning")
+            return
+
+        from ec2_ssh.screens.command_picker import SaveCommandModal
+
+        def _on_name(name: str | None) -> None:
+            if name:
+                self.app.command_history.save_command(name, command)
+                self.notify(f"Saved: {name}", severity="information")
+                self.query_one("#command_input", Input).focus()
+
+        self.app.push_screen(SaveCommandModal(command), callback=_on_name)

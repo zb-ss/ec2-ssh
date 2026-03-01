@@ -25,7 +25,7 @@ class KeywordStore(KeywordStoreInterface):
     }
     """
 
-    def __init__(self, store_path: str = "~/.ec2_ssh_keywords.json") -> None:
+    def __init__(self, store_path: str = "~/.ec2-ssh/keywords.json") -> None:
         """Initialize the keyword store.
 
         Args:
