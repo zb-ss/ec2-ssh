@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ec2-ssh"
+name = "ec2-tui"
 version = "2.0.0"
 description = "Interactive TUI for managing AWS EC2 SSH connections"
 readme = "README.md"
@@ -39,9 +39,9 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/zb-ss/ec2-connect"
-Repository = "https://github.com/zb-ss/ec2-connect"
-Issues = "https://github.com/zb-ss/ec2-connect/issues"
+Homepage = "https://github.com/zb-ss/ec2-ssh"
+Repository = "https://github.com/zb-ss/ec2-ssh"
+Issues = "https://github.com/zb-ss/ec2-ssh/issues"
 
 [project.scripts]
 ec2-ssh = "ec2_ssh.main:main"
