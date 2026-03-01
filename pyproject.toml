@@ -6,15 +6,49 @@ build-backend = "hatchling.build"
 name = "ec2-ssh"
 version = "2.0.0"
 description = "Interactive TUI for managing AWS EC2 SSH connections"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration",
+]
 dependencies = [
     "boto3",
     "tabulate",
-    "textual>=0.40.0"
+    "textual>=0.40.0",
 ]
-requires-python = ">=3.8"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/zb-ss/ec2-connect"
+Repository = "https://github.com/zb-ss/ec2-connect"
+Issues = "https://github.com/zb-ss/ec2-connect/issues"
 
 [project.scripts]
 ec2-ssh = "ec2_ssh.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ec2_ssh"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

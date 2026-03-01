@@ -17,16 +17,16 @@ class InstanceTable(DataTable):
         self._setup_columns()
 
     def _setup_columns(self) -> None:
-        """Set up table columns."""
+        """Set up table columns with auto-sizing for available width."""
         self.add_column("#", width=4, key="index")
-        self.add_column("Name", width=25, key="name")
+        self.add_column("Name", key="name")
         self.add_column("ID", width=20, key="id")
-        self.add_column("Type", width=15, key="type")
-        self.add_column("State", width=12, key="state")
+        self.add_column("Type", width=12, key="type")
+        self.add_column("State", width=10, key="state")
         self.add_column("Public IP", width=16, key="public_ip")
         self.add_column("Private IP", width=16, key="private_ip")
-        self.add_column("Region", width=15, key="region")
-        self.add_column("Key", width=20, key="key")
+        self.add_column("Region", width=14, key="region")
+        self.add_column("Key", key="key")
 
     def populate(self, instances: List[dict]) -> None:
         """Populate table with instances.

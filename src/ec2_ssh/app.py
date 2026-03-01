@@ -36,6 +36,10 @@ class EC2ConnectApp(App):
         from ec2_ssh.screens.main_menu import MainMenuScreen
 
         self._init_services()
+        # Eagerly load cached instances so all screens have data
+        cached = self.cache_service.load_any()
+        if cached:
+            self.instances = cached
         self.push_screen(MainMenuScreen())
 
     def _init_services(self) -> None:

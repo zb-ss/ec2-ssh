@@ -17,11 +17,10 @@ HELP_TEXT = """
 | Option | Shortcut | Description |
 |--------|----------|-------------|
 | **List Instances** | `1` or `L` | View all EC2 instances across AWS regions |
-| **Search** | `2` or `S` | Search instances and keyword scan results |
-| **Manage SSH Keys** | `3` or `K` | Configure SSH keys and SSH agent |
-| **Scan Servers** | `4` or `C` | Run scans on all running instances |
-| **Settings** | `5` or `T` | Edit configuration |
-| **Quit** | `6` or `Q` | Exit |
+| **Manage SSH Keys** | `2` or `K` | Configure SSH keys and SSH agent |
+| **Scan Servers** | `3` or `C` | Run scans on all running instances |
+| **Settings** | `4` or `T` | Edit configuration |
+| **Quit** | `5` or `Q` | Exit |
 
 ## Instance List Shortcuts
 
@@ -33,7 +32,7 @@ HELP_TEXT = """
 | Browse Files | `B` | Open remote file browser |
 | Run Command | `C` | Open command overlay |
 | SCP Transfer | `T` | Open file transfer |
-| Search | `/` | Focus search input |
+| Search | `/` | Search instances and keyword scan results |
 | Refresh | `R` | Force-refresh from AWS |
 | Back | `Escape` | Return to main menu |
 

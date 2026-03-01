@@ -5,9 +5,9 @@ from typing import Optional, List
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Vertical
+from textual.containers import Container, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Header, Footer, Input
+from textual.widgets import Header, Footer, Input, Label, Static
 from textual.worker import Worker
 
 from ec2_ssh.widgets.instance_table import InstanceTable
@@ -38,9 +38,11 @@ class InstanceListScreen(Screen):
         """Compose the instance list UI."""
         yield Header()
         yield Container(
-            Input(placeholder="Search instances...", id="search_input"),
+            Input(placeholder="Search instances and keywords...", id="search_input"),
             ProgressIndicator(),
             InstanceTable(),
+            Label("[bold]Keyword Matches:[/bold]", id="keyword_matches_label"),
+            VerticalScroll(id="keyword_matches_container"),
             StatusBar(),
             id="instance_list_container"
         )
@@ -49,30 +51,41 @@ class InstanceListScreen(Screen):
     def on_mount(self) -> None:
         """Load instances using stale-while-revalidate strategy.
 
-        1. If any cached data exists (even expired), show it immediately
+        1. If app already has cached data (loaded at startup), show it immediately
         2. If cache is still fresh, done — no AWS call needed
         3. If cache is stale or empty, fetch from AWS in the background
         """
         import logging
         logger = logging.getLogger(__name__)
 
-        # Try to show cached data immediately for instant startup
-        stale_data = self.app.cache_service.load_any()
-        if stale_data:
-            self._instances = stale_data
-            self.app.instances = stale_data
+        # Hide keyword panel until a search is performed
+        self.query_one("#keyword_matches_label").display = False
+        self.query_one("#keyword_matches_container").display = False
+
+        # Use instances already loaded by app.on_mount(), or try cache directly
+        if self.app.instances:
+            self._instances = self.app.instances
             self._update_table()
             self._update_status_bar()
-            logger.info("Loaded %d instances from cache (age: %s)",
-                        len(stale_data), self.app.cache_service.get_age())
+            logger.info("Loaded %d instances from app cache (age: %s)",
+                        len(self._instances), self.app.cache_service.get_age())
+        else:
+            stale_data = self.app.cache_service.load_any()
+            if stale_data:
+                self._instances = stale_data
+                self.app.instances = stale_data
+                self._update_table()
+                self._update_status_bar()
+                logger.info("Loaded %d instances from cache file (age: %s)",
+                            len(stale_data), self.app.cache_service.get_age())
 
         # If cache is fresh, we're done
         if self.app.cache_service.is_fresh():
             logger.info("Cache is fresh, skipping AWS fetch")
             return
 
-        # Cache is stale or empty — fetch in background
-        if stale_data:
+        # Cache is stale or empty — fetch in background or foreground
+        if self._instances:
             self._background_refresh()
         else:
             self._fetch_instances()
@@ -219,6 +232,58 @@ class InstanceListScreen(Screen):
             table = self.query_one(InstanceTable)
             table.filter(event.value)
             self._update_status_bar()
+
+            query = event.value.strip()
+            if len(query) >= 2:
+                self._search_keywords(query)
+            else:
+                self._clear_keyword_results()
+
+    def _search_keywords(self, query: str) -> None:
+        """Search keyword store and display matches."""
+        try:
+            matches = self.app.keyword_store.search(query)
+        except Exception as e:
+            self.app.notify(f"Error searching keywords: {e}", severity="error")
+            matches = []
+
+        self._display_keyword_matches(matches)
+
+    def _display_keyword_matches(self, matches: List[dict]) -> None:
+        """Display keyword search results in the panel."""
+        label = self.query_one("#keyword_matches_label")
+        container = self.query_one("#keyword_matches_container", VerticalScroll)
+        container.remove_children()
+
+        if not matches:
+            label.display = False
+            container.display = False
+            return
+
+        label.display = True
+        container.display = True
+
+        for match in matches[:20]:
+            server_id = match.get('server_id', '')
+            source = match.get('source', '')
+            content = match.get('content', '')
+
+            if len(content) > 200:
+                content = content[:200] + "..."
+
+            result_text = (
+                f"[bold]Server: {server_id}[/bold]\n"
+                f"  Source: {source}\n"
+                f"  [dim]{content}[/dim]\n"
+            )
+            container.mount(Static(result_text))
+
+    def _clear_keyword_results(self) -> None:
+        """Hide and clear keyword results panel."""
+        self.query_one("#keyword_matches_label").display = False
+        container = self.query_one("#keyword_matches_container", VerticalScroll)
+        container.display = False
+        container.remove_children()
 
     def action_back(self) -> None:
         """Navigate back to main menu."""
