@@ -4,11 +4,25 @@ A modern Terminal User Interface (TUI) for managing AWS EC2 instances — list, 
 
 ## Quick Install
 
+**Linux / macOS:**
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/zb-ss/ec2-ssh/master/install.sh | bash
 ```
 
-Or install manually:
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/zb-ss/ec2-ssh/master/install.ps1 | iex
+```
+
+**Or install directly via pipx / pip:**
+
+```bash
+pipx install ec2-tui
+```
+
+**Manual install from source:**
 
 ```bash
 git clone https://github.com/zb-ss/ec2-ssh.git

@@ -176,32 +176,53 @@ install_pipx() {
 install_ec2_ssh() {
     print_info "Installing ec2-ssh..."
 
-    # Check if we're in the repository directory
-    if [ -f "pyproject.toml" ]; then
-        # Verify it's the ec2-ssh project
-        if grep -q "name = \"ec2-ssh\"" pyproject.toml 2>/dev/null; then
-            print_info "Installing from local repository..."
-            if pipx install . --force; then
-                print_success "ec2-ssh installed successfully from local source"
-                return 0
-            else
-                print_error "Failed to install ec2-ssh from local source"
-                exit 1
-            fi
+    # Strategy 1: Local repository (if running ./install.sh from cloned repo)
+    if [ -f "pyproject.toml" ] && grep -q "name = \"ec2-tui\"" pyproject.toml 2>/dev/null; then
+        print_info "Installing from local repository..."
+        if pipx install . --force; then
+            print_success "ec2-ssh installed successfully from local source"
+            return 0
+        else
+            print_warning "Local install failed, trying PyPI..."
         fi
     fi
 
-    # Not in repo directory
-    print_warning "Not in ec2-ssh repository directory"
+    # Strategy 2: Install from PyPI
+    print_info "Installing from PyPI..."
+    if pipx install ec2-tui 2>/dev/null; then
+        print_success "ec2-ssh installed successfully from PyPI"
+        return 0
+    fi
+
+    # Strategy 3: Clone repo and install from source
+    print_warning "PyPI install failed, cloning repository..."
+
+    if ! check_command git; then
+        print_error "git is required to clone the repository"
+        echo ""
+        echo "Install git and try again, or install manually:"
+        echo "  ${BOLD}pipx install ec2-tui${RESET}"
+        exit 1
+    fi
+
+    CLONE_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'ec2-ssh')
+    print_info "Cloning to temporary directory: $CLONE_DIR"
+
+    if git clone --depth 1 https://github.com/zb-ss/ec2-ssh.git "$CLONE_DIR/ec2-ssh" 2>/dev/null; then
+        if pipx install "$CLONE_DIR/ec2-ssh" --force; then
+            print_success "ec2-ssh installed successfully from repository"
+            rm -rf "$CLONE_DIR"
+            return 0
+        fi
+    fi
+
+    rm -rf "$CLONE_DIR"
+    print_error "All installation methods failed"
     echo ""
-    echo "Please clone the repository first:"
-    echo ""
+    echo "Please try manually:"
     echo "  ${BOLD}git clone https://github.com/zb-ss/ec2-ssh.git${RESET}"
     echo "  ${BOLD}cd ec2-ssh${RESET}"
-    echo "  ${BOLD}./install.sh${RESET}"
-    echo ""
-    echo "Or install directly from PyPI (if published):"
-    echo "  ${BOLD}pipx install ec2-ssh${RESET}"
+    echo "  ${BOLD}pipx install .${RESET}"
     exit 1
 }
 
